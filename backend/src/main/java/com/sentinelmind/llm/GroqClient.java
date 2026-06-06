@@ -2,6 +2,7 @@ package com.sentinelmind.llm;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,6 +48,25 @@ public class GroqClient {
 
     @Value("${groq.temperature:0.1}")
     private double temperature;
+
+    /**
+     * Runs once after Spring injects all @Value fields.
+     * Logs whether Groq is active so the startup log shows the key injection result.
+     * Look for "[GROQ]" lines in the backend container log to confirm the key arrived.
+     */
+    @PostConstruct
+    public void logStartupStatus() {
+        log.info("[GROQ] ══════════════════════════════════════════════");
+        log.info("[GROQ] API key configured: {}", isConfigured());
+        log.info("[GROQ] Model: {}", model);
+        log.info("[GROQ] Base URL: {}", baseUrl);
+        if (!isConfigured()) {
+            log.info("[GROQ] ── Running in RULE-BASED fallback mode (no GROQ_API_KEY)");
+        } else {
+            log.info("[GROQ] ── Real AI reasoning ENABLED via Groq");
+        }
+        log.info("[GROQ] ══════════════════════════════════════════════");
+    }
 
     // Reuse the same HttpClient instance — it is thread-safe
     private final HttpClient httpClient = HttpClient.newBuilder()
