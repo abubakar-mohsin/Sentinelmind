@@ -172,8 +172,11 @@ services:
       start_period: 60s
 
   # ─────────────────────────────────────────────
-  # React Frontend Dashboard
-  # Dashboard at http://localhost:3000
+  # React SaaS Frontend (Landing + Login + Dashboard)
+  # http://localhost:3001  →  nginx serves the CRA build
+  # nginx proxies /api/* and /ws/* to the backend container.
+  # No REACT_APP_WS_URL needed — the app uses relative URLs
+  # which nginx forwards to backend:8080 internally.
   # ─────────────────────────────────────────────
   frontend:
     build:
@@ -181,10 +184,7 @@ services:
       dockerfile: Dockerfile
     container_name: sentinelmind-frontend
     ports:
-      - "3000:80"
-    environment:
-      REACT_APP_API_URL: http://localhost:8080
-      REACT_APP_WS_URL: ws://localhost:8080/ws
+      - "3001:80"
     depends_on:
       backend:
         condition: service_healthy

@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 
-function sevClass(sev) {
-  const s = (sev || '').toLowerCase();
-  return `badge badge-${s}`;
-}
-
 function fmtTs(ts) {
   if (!ts) return '--';
   const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
 }
 
 function truncate(str, n) {
@@ -16,96 +14,104 @@ function truncate(str, n) {
   return str.length > n ? str.slice(0, n) + '…' : str;
 }
 
+function sevClass(sev) {
+  const s = (sev || '').toLowerCase();
+  return `badge badge-${s}`;
+}
+
 export default function AlertQueue({ incidents }) {
   const [selectedIdx, setSelectedIdx] = useState(null);
 
   return (
-    <div className="panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-      <div className="panel-header">
-        <span>⚠ INCIDENT QUEUE</span>
-        <span style={{
-          background: 'rgba(255,45,85,0.12)',
-          color:      'var(--red)',
-          border:     '1px solid rgba(255,45,85,0.28)',
-          borderRadius: 'var(--radius)',
-          padding:    '1px 7px',
-          fontSize:   9,
-          fontWeight: 700,
-        }}>
-          {incidents.length}
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 200 }}>
+      <div className="card-header">
+        <span className="card-title">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 9v2m0 4h.01"/>
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+          Incident Queue
         </span>
+        {incidents.length > 0 && (
+          <span className="badge badge-danger" style={{ fontSize: 11 }}>
+            {incidents.length}
+          </span>
+        )}
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 0' }}>
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {incidents.length === 0 ? (
-          <div style={{
-            height:         '100%',
-            display:        'flex',
-            alignItems:     'center',
-            justifyContent: 'center',
-            color:          'var(--text-3)',
-            fontSize:       11,
-            letterSpacing:  '0.08em',
-          }}>
-            // NO INCIDENTS RECORDED
+          <div className="empty-state">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-4)' }}>
+              <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+            </svg>
+            <span style={{ fontSize: 13 }}>No incidents recorded</span>
           </div>
         ) : (
           incidents.map((inc, i) => {
-            const isSelected = selectedIdx === i;
-            const pct        = inc.confidence != null ? `${(inc.confidence * 100).toFixed(1)}%` : '--';
+            const isOpen = selectedIdx === i;
+            const pct    = inc.confidence != null ? `${(inc.confidence * 100).toFixed(1)}%` : null;
 
             return (
               <div
                 key={i}
-                onClick={() => setSelectedIdx(isSelected ? null : i)}
+                onClick={() => setSelectedIdx(isOpen ? null : i)}
                 style={{
-                  padding:         '7px 10px',
-                  borderBottom:    '1px solid var(--border)',
-                  cursor:          'pointer',
-                  background:      isSelected ? 'rgba(0,245,255,0.04)' : 'transparent',
-                  borderLeft:      isSelected ? '2px solid var(--cyan)' : '2px solid transparent',
-                  transition:      'all 0.15s ease',
-                  animation:       i === 0 ? 'sweep-in 0.25s ease' : 'none',
+                  padding: '10px 18px',
+                  borderBottom: '1px solid var(--border)',
+                  cursor: 'pointer',
+                  borderLeft: `3px solid ${isOpen ? 'var(--brand)' : 'transparent'}`,
+                  background: isOpen ? 'var(--brand-dim)' : 'transparent',
+                  transition: 'var(--t)',
+                  animation: i === 0 ? 'sweep-in 0.25s ease' : 'none',
                 }}
-                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(0,245,255,0.025)'; }}
-                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+                onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = 'transparent'; }}
               >
-                {/* Row 1: time + severity + confidence */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                  <span style={{ color: 'var(--text-3)', fontSize: 10, flexShrink: 0 }}>
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-4)', flexShrink: 0 }}>
                     {fmtTs(inc.receivedAt)}
                   </span>
-                  <div style={{ flex: 1, minWidth: 0 }} />
-                  <span className={sevClass(inc.severity)} style={{ fontSize: 9 }}>
+                  <div style={{ flex: 1 }} />
+                  <span className={sevClass(inc.severity)} style={{ fontSize: 11 }}>
                     {inc.severity || 'UNKNOWN'}
                   </span>
-                  <span style={{ color: 'var(--cyan)', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
-                    {pct}
-                  </span>
+                  {pct && (
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--brand)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                      {pct}
+                    </span>
+                  )}
                 </div>
 
-                {/* Row 2: actor + IP */}
-                <div style={{ fontSize: 11, color: 'var(--text-1)', letterSpacing: '0.02em' }}>
-                  <span>{truncate(inc.actor, 22)}</span>
-                  <span style={{ color: 'var(--text-3)', margin: '0 5px' }}>//</span>
-                  <span style={{ color: 'var(--red)' }}>{inc.sourceIp || '—'}</span>
-                </div>
-
-                {/* Expanded detail */}
-                {isSelected && inc.mitreIds && inc.mitreIds.length > 0 && (
+                {/* Actor + IP row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {truncate(inc.actor, 28)}
+                  </div>
                   <div style={{
-                    marginTop:   6,
-                    paddingTop:  6,
-                    borderTop:   '1px solid var(--border)',
-                    animation:   'slide-down 0.2s ease',
+                    fontSize: 11, fontFamily: 'var(--font-mono)',
+                    color: 'var(--danger)', flexShrink: 0,
+                    background: 'var(--danger-bg)', padding: '1px 6px', borderRadius: 4,
                   }}>
-                    <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 4, letterSpacing: '0.10em' }}>
-                      TECHNIQUES
+                    {inc.sourceIp || '—'}
+                  </div>
+                </div>
+
+                {/* Expanded techniques */}
+                {isOpen && inc.mitreIds && inc.mitreIds.length > 0 && (
+                  <div style={{
+                    marginTop: 10, paddingTop: 10,
+                    borderTop: '1px solid var(--border)',
+                    animation: 'fade-in 0.2s ease',
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                      MITRE Techniques
                     </div>
                     {inc.mitreIds.map((id, j) => (
-                      <div key={id} style={{ fontSize: 10, display: 'flex', gap: 6, lineHeight: '16px' }}>
-                        <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>{id}</span>
-                        <span style={{ color: 'var(--text-2)' }}>{inc.mitreNames?.[j] || ''}</span>
+                      <div key={id} style={{ display: 'flex', gap: 8, fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: 'var(--brand)', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{id}</span>
+                        <span style={{ color: 'var(--text-3)' }}>{inc.mitreNames?.[j] || ''}</span>
                       </div>
                     ))}
                   </div>

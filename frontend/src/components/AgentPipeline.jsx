@@ -1,139 +1,115 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 
 const AGENTS = [
   {
     key:         'AnomalyDetectionAgent',
-    codename:    'ANOMALY-1',
-    shortName:   'AnomalyDetectionAgent',
-    description: 'Z-SCORE BEHAVIORAL ANALYSIS',
-    index:       0,
+    name:        'Anomaly Detection',
+    desc:        'Z-score behavioral analysis',
+    icon:        'M22 12h-4l-3 9L9 3l-3 9H2',
   },
   {
     key:         'ThreatIntelAgent',
-    codename:    'INTEL-1',
-    shortName:   'ThreatIntelAgent',
-    description: 'REPUTATION FEED CORRELATION',
-    index:       1,
+    name:        'Threat Intelligence',
+    desc:        'Reputation feed correlation',
+    icon:        'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
   },
   {
     key:         'ThreatClassifierAgent',
-    codename:    'CLASS-1',
-    shortName:   'ThreatClassifierAgent',
-    description: 'MITRE ATT&CK MAPPING',
-    index:       2,
+    name:        'Threat Classifier',
+    desc:        'MITRE ATT&CK mapping',
+    icon:        ['M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18'],
   },
   {
     key:         'IncidentResponderAgent',
-    codename:    'RESP-1',
-    shortName:   'IncidentResponderAgent',
-    description: 'AUTOMATED PLAYBOOK EXEC',
-    index:       3,
+    name:        'Incident Responder',
+    desc:        'Automated playbook execution',
+    icon:        ['M13 10V3L4 14h7v7l9-11h-7z'],
   },
 ];
 
-function StatusDot({ status }) {
-  const colors = { IDLE: '#4A5568', RUNNING: '#00F5FF', COMPLETE: '#00FF88' };
-  const color  = colors[status] || colors.IDLE;
+function AgentIcon({ path, color }) {
   return (
-    <span style={{
-      display:      'inline-block',
-      width:        6,
-      height:       6,
-      borderRadius: '50%',
-      background:   color,
-      marginRight:  6,
-      boxShadow:    status === 'RUNNING' ? `0 0 6px ${color}` : 'none',
-      animation:    status === 'RUNNING' ? 'pulse-dot 1.2s ease-in-out infinite' : 'none',
-      flexShrink:   0,
-    }} />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {Array.isArray(path) ? path.map((d, i) => <path key={i} d={d} />) : <path d={path} />}
+    </svg>
   );
 }
 
 function AgentCard({ agent, state }) {
   const { status = 'IDLE', summary = null, elapsed = null } = state || {};
 
-  const borderColor =
-    status === 'RUNNING'  ? 'var(--border-active)' :
-    status === 'COMPLETE' ? 'rgba(0,255,136,0.35)' :
-                            'var(--border)';
+  const statusConfig = {
+    IDLE:     { label: 'Idle',     color: 'var(--text-4)',  bg: 'var(--bg-elevated)',  dot: 'dot-muted',   borderColor: 'var(--border)' },
+    RUNNING:  { label: 'Running',  color: 'var(--brand)',   bg: 'var(--bg-elevated)',  dot: 'dot-pulse-brand', borderColor: 'rgba(99,102,241,0.4)' },
+    COMPLETE: { label: 'Complete', color: 'var(--success)', bg: 'var(--bg-elevated)',  dot: 'dot-success', borderColor: 'rgba(34,197,94,0.3)' },
+  };
 
-  const boxShadow =
-    status === 'RUNNING'  ? '0 0 16px rgba(0,245,255,0.18)' :
-    status === 'COMPLETE' ? '0 0 12px rgba(0,255,136,0.12)' :
-                            'none';
-
-  const statusColor =
-    status === 'RUNNING'  ? 'var(--cyan)'   :
-    status === 'COMPLETE' ? 'var(--green)'  :
-                            'var(--text-3)';
+  const cfg = statusConfig[status] || statusConfig.IDLE;
 
   return (
-    <div style={{
-      flex:          1,
-      minWidth:      0,
-      background:    'var(--bg-panel)',
-      border:        `1px solid ${borderColor}`,
-      borderRadius:  'var(--radius)',
-      padding:       '10px 12px',
-      transition:    'border-color 0.3s ease, box-shadow 0.3s ease',
-      boxShadow,
-      display:       'flex',
-      flexDirection: 'column',
-      gap:           4,
-      position:      'relative',
-      overflow:      'hidden',
-    }}>
-      {/* Active shimmer line */}
+    <div className={`agent-card ${status.toLowerCase()}`}
+      style={{ borderColor: cfg.borderColor, boxShadow: status === 'RUNNING' ? '0 0 18px rgba(99,102,241,0.1)' : status === 'COMPLETE' ? '0 0 12px rgba(34,197,94,0.07)' : 'none' }}>
+
+      {/* Running shimmer bar */}
       {status === 'RUNNING' && (
         <div style={{
-          position:   'absolute',
-          top:        0, left: 0, right: 0,
-          height:     1,
-          background: 'linear-gradient(90deg, transparent, var(--cyan), transparent)',
-          animation:  'glow-pulse 1.4s ease-in-out infinite',
-        }} />
-      )}
-
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--text-2)' }}>
-        {agent.codename}
-      </div>
-      <div style={{ fontSize: 9, color: 'var(--text-3)', letterSpacing: '0.08em' }}>
-        {agent.description}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', marginTop: 4 }}>
-        <StatusDot status={status} />
-        <span style={{ fontSize: 10, color: statusColor, fontWeight: status !== 'IDLE' ? 600 : 400 }}>
-          {status}
-        </span>
-      </div>
-
-      {summary && (
-        <div style={{
-          fontSize:   10,
-          color:      'var(--text-2)',
-          marginTop:  4,
-          lineHeight: '15px',
-          overflow:   'hidden',
-          display:    '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          animation:  'fade-in 0.3s ease',
+          position: 'absolute', top: 0, left: 0, right: 0, height: 2,
+          background: 'var(--brand)', opacity: 0.6,
+          overflow: 'hidden',
         }}>
-          {summary}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.6) 50%, transparent 100%)',
+            animation: 'shimmer-bar 1.5s ease-in-out infinite',
+          }} />
         </div>
       )}
 
-      {elapsed != null && (
+      {/* Icon + name row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <div style={{
-          position:  'absolute',
-          bottom:    6,
-          right:     8,
-          fontSize:  9,
-          color:     'var(--cyan)',
-          letterSpacing: '0.06em',
+          width: 26, height: 26, borderRadius: 6,
+          background: status === 'RUNNING' ? 'var(--brand-dim)' : status === 'COMPLETE' ? 'var(--success-bg)' : 'rgba(255,255,255,0.05)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
         }}>
-          {elapsed}ms
+          <AgentIcon path={agent.icon} color={status === 'RUNNING' ? 'var(--brand)' : status === 'COMPLETE' ? 'var(--success)' : 'var(--text-4)'} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-1)', lineHeight: 1.3 }}>
+            {agent.name}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 8, lineHeight: 1.4 }}>
+        {agent.desc}
+      </div>
+
+      {/* Status row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 'auto' }}>
+        <span className={`status-dot ${cfg.dot}`} />
+        <span style={{ fontSize: 11.5, fontWeight: 500, color: cfg.color }}>{cfg.label}</span>
+        {elapsed != null && (
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+            {elapsed < 1000 ? `${elapsed}ms` : `${(elapsed / 1000).toFixed(1)}s`}
+          </span>
+        )}
+      </div>
+
+      {/* Summary */}
+      {summary && (
+        <div style={{
+          marginTop: 8, paddingTop: 8,
+          borderTop: '1px solid var(--border)',
+          fontSize: 11, color: 'var(--text-3)',
+          lineHeight: 1.5,
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+          animation: 'fade-in 0.3s ease',
+        }}>
+          {summary}
         </div>
       )}
     </div>
@@ -142,105 +118,58 @@ function AgentCard({ agent, state }) {
 
 function Connector({ active }) {
   return (
-    <div style={{
-      display:        'flex',
-      alignItems:     'center',
-      width:          28,
-      flexShrink:     0,
-      position:       'relative',
-    }}>
-      <div style={{
-        width:        '100%',
-        height:       1,
-        background:   active ? 'var(--cyan)' : 'var(--border)',
-        transition:   'background 0.4s ease',
-        boxShadow:    active ? '0 0 6px rgba(0,245,255,0.5)' : 'none',
-      }} />
-      <span style={{
-        position:  'absolute',
-        right:     -5,
-        color:     active ? 'var(--cyan)' : 'var(--text-3)',
-        fontSize:  12,
-        lineHeight: 1,
-        transition: 'color 0.4s ease',
-      }}>▸</span>
+    <div className="agent-connector">
+      <div className={`agent-connector-line ${active ? 'active' : ''}`} />
+      <span className={`agent-connector-arrow ${active ? 'active' : ''}`}>▸</span>
     </div>
   );
 }
 
 export default function AgentPipeline({ agentStates }) {
-  // Track which connectors should be "lit" based on receiving agent being RUNNING/COMPLETE
-  const getConnectorActive = (idx) => {
-    const nextKey = AGENTS[idx + 1]?.key;
-    if (!nextKey) return false;
-    const nextState = agentStates[nextKey]?.status;
-    return nextState === 'RUNNING' || nextState === 'COMPLETE';
-  };
-
-  // Calculate overall progress (0–4 agents complete)
   const completeCount = AGENTS.filter(a => agentStates[a.key]?.status === 'COMPLETE').length;
   const progressPct   = (completeCount / AGENTS.length) * 100;
   const allDone       = completeCount === AGENTS.length;
 
+  function isConnectorActive(idx) {
+    const nextKey = AGENTS[idx + 1]?.key;
+    if (!nextKey) return false;
+    const s = agentStates[nextKey]?.status;
+    return s === 'RUNNING' || s === 'COMPLETE';
+  }
+
   return (
-    <div className="panel" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <div className="panel-header">
-        <span>◈ AGENT PIPELINE  //  REACT LOOP</span>
-        <span style={{ color: 'var(--text-3)', fontSize: 9 }}>
-          {completeCount}/{AGENTS.length} COMPLETE
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div className="card-header">
+        <span className="card-title">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+          </svg>
+          Agent Pipeline
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}>
+          {completeCount}/{AGENTS.length} complete
         </span>
       </div>
 
-      {/* Progress track */}
-      <div style={{ padding: '8px 14px 0', flexShrink: 0 }}>
-        <div style={{
-          height:       2,
-          background:   'var(--border)',
-          borderRadius: 1,
-          position:     'relative',
-          overflow:     'hidden',
-        }}>
+      {/* Progress bar */}
+      <div style={{ padding: '12px 18px 0', flexShrink: 0 }}>
+        <div style={{ height: 3, background: 'var(--border)', borderRadius: 99, overflow: 'hidden', position: 'relative' }}>
           <div style={{
-            height:     '100%',
-            width:      `${progressPct}%`,
-            background: allDone ? 'var(--green)' : 'var(--cyan)',
-            transition: 'width 0.5s ease, background 0.3s ease',
-            boxShadow:  progressPct > 0
-              ? `0 0 8px ${allDone ? 'rgba(0,255,136,0.6)' : 'rgba(0,245,255,0.5)'}`
-              : 'none',
+            height: '100%', borderRadius: 99,
+            width: `${progressPct}%`,
+            background: allDone ? 'var(--success)' : 'var(--brand)',
+            transition: 'width 0.5s ease',
+            boxShadow: progressPct > 0 ? `0 0 8px ${allDone ? 'rgba(34,197,94,0.5)' : 'rgba(99,102,241,0.5)'}` : 'none',
           }} />
-          {/* Dot marker */}
-          {progressPct > 0 && progressPct < 100 && (
-            <div style={{
-              position:     'absolute',
-              top:          '50%',
-              left:         `${progressPct}%`,
-              transform:    'translate(-50%, -50%)',
-              width:        6,
-              height:       6,
-              borderRadius: '50%',
-              background:   'var(--cyan)',
-              boxShadow:    '0 0 8px rgba(0,245,255,0.8)',
-            }} />
-          )}
         </div>
       </div>
 
-      {/* Agent cards row */}
-      <div style={{
-        display:    'flex',
-        alignItems: 'stretch',
-        gap:        0,
-        padding:    '8px 14px 10px',
-        flex:       1,
-        minHeight:  0,
-      }}>
+      {/* Agent cards */}
+      <div className="agent-row">
         {AGENTS.map((agent, i) => (
           <React.Fragment key={agent.key}>
             <AgentCard agent={agent} state={agentStates[agent.key]} />
-            {i < AGENTS.length - 1 && (
-              <Connector active={getConnectorActive(i)} />
-            )}
+            {i < AGENTS.length - 1 && <Connector active={isConnectorActive(i)} />}
           </React.Fragment>
         ))}
       </div>

@@ -2,7 +2,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 
-const WS_URL = process.env.REACT_APP_WS_URL || 'http://localhost:8080/ws';
+// In dev, the CRA proxy (setupProxy.js) forwards /ws → localhost:8080/ws.
+// In Docker production, REACT_APP_WS_URL overrides to ws://localhost:8080/ws directly.
+const WS_URL = process.env.REACT_APP_WS_URL ||
+  `${window.location.protocol}//${window.location.host}/ws`;
 const MAX_MESSAGES = 100;
 
 /**
