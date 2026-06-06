@@ -140,7 +140,6 @@ services:
 
       # LLM API (only used when SPRING_PROFILES_ACTIVE=real)
       LLM_API_KEY: ${LLM_API_KEY:-not-set}
-      GROQ_API_KEY: ${GROQ_API_KEY:-not-set}
 
       # Groq API — enables real AI reasoning in LlmStrategy and OrchestratorAgent.
       # Free keys at https://console.groq.com  |  Model: llama-3.3-70b-versatile

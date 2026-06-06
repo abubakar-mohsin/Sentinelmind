@@ -40,14 +40,12 @@ com\sentinelmind\orchestrator\handlers\CriticalSeverityHandler.class
 com\sentinelmind\model\WebSocketMessage.class
 com\sentinelmind\orchestrator\handlers\AbstractEventHandler.class
 com\sentinelmind\orchestrator\handlers\LowSeverityHandler.class
-com\sentinelmind\orchestrator\OrchestratorAgent.class
 com\sentinelmind\agents\responder\ForcePasswordResetCommand.class
 com\sentinelmind\model\SecurityEvent.class
 com\sentinelmind\audit\AuditEntry.class
 com\sentinelmind\agents\threatintel\VirusTotalResponse.class
 com\sentinelmind\audit\AuditEntry$AuditEntryBuilder.class
 com\sentinelmind\agents\classifier\RuleBasedStrategy.class
-com\sentinelmind\agents\AgentFactory.class
 com\sentinelmind\audit\IncidentRepository.class
 com\sentinelmind\model\Finding.class
 com\sentinelmind\orchestrator\ConfidenceCalculator.class

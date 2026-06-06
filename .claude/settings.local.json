@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Skill(impeccable)",
-      "Skill(impeccable:*)"
+      "Skill(impeccable:*)",
+      "Bash(ls /d/Projects/Sentinelmind/.claude/worktrees/confident-pasteur-181235/frontend/public/ && echo \"---OLD---\" && ls /d/Projects/Sentinelmind/.claude/worktrees/brave-allen-164360/frontend/public/)"
     ]
   }
 }
