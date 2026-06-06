@@ -142,6 +142,11 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-not-set}
       GROQ_API_KEY: ${GROQ_API_KEY:-not-set}
 
+      # Groq API — enables real AI reasoning in LlmStrategy and OrchestratorAgent.
+      # Free keys at https://console.groq.com  |  Model: llama-3.3-70b-versatile
+      # Works WITHOUT a key — the system falls back to rule-based logic automatically.
+      GROQ_API_KEY: ${GROQ_API_KEY:-not-set}
+
       # VirusTotal (only used when SPRING_PROFILES_ACTIVE=real)
       VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-not-set}
 

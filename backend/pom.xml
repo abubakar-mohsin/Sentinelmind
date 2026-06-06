@@ -69,6 +69,14 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Security — NFR-04: dashboard access shall use auth.
+             In mock profile: all requests permitted (demo mode).
+             In real profile: HTTP Basic enforced (JWT filter is the production upgrade path). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

@@ -1,58 +1,171 @@
 package com.sentinelmind.agents.classifier;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sentinelmind.llm.GroqClient;
 import com.sentinelmind.model.Finding;
-import org.springframework.context.annotation.Profile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * LlmStrategy — Strategy Pattern (Bonus), active only under @Profile("real")
+ * LlmStrategy — Strategy Pattern (Bonus), powered by Groq llama-3.3-70b-versatile.
  *
- * Uses an LLM (e.g., Claude or GPT-4) to classify novel attack patterns
- * that the rule-based strategy doesn't recognise. More flexible than rules,
- * but slower and costs money — so it is never loaded in demo/mock mode.
+ * This is the PRIMARY ClassificationStrategy — it is always active in all profiles.
+ * When GROQ_API_KEY is set, it sends the finding to the real Groq LLM and parses
+ * a structured JSON response with MITRE ATT&CK mappings.
+ * When GROQ_API_KEY is NOT set (demo/mock mode), isConfigured() returns false and
+ * we immediately delegate to the injected RuleBasedStrategy fallback — so the demo
+ * always works without any API key.
  *
- * In the "real" profile, ThreatClassifierAgent will inject this as the
- * primary strategy and fall back to RuleBasedStrategy if the LLM returns unknown.
+ * Why @Primary? Because there are two ClassificationStrategy beans (this one and
+ * RuleBasedStrategy). @Primary tells Spring to prefer this one when injecting
+ * ClassificationStrategy WITHOUT a @Qualifier. ThreatClassifierAgent uses
+ * @Qualifier("llmStrategy") for extra explicitness — both mechanisms agree.
+ *
+ * This class demonstrates the Strategy pattern: ThreatClassifierAgent calls
+ * classify() on the interface without knowing whether it's running LLM or rules.
  */
-@Component
-@Profile("real")
+@Component("llmStrategy")
+@Primary
 public class LlmStrategy implements ClassificationStrategy {
 
-    private final LlmApiClient llmClient;
+    private static final Logger log = LoggerFactory.getLogger(LlmStrategy.class);
 
-    public LlmStrategy(LlmApiClient llmClient) {
-        this.llmClient = llmClient;
+    /**
+     * The system prompt that shapes the model's response format.
+     * We demand strict JSON so we can parse it reliably.
+     */
+    private static final String MITRE_SYSTEM_PROMPT = """
+        You are a MITRE ATT&CK cybersecurity expert. Analyze security findings and
+        map them to the most relevant ATT&CK techniques.
+
+        You MUST respond ONLY with valid JSON in this exact format — no markdown, no prose:
+        {
+            "techniqueIds": ["T1078", "T1110.004"],
+            "techniqueNames": ["Valid Accounts", "Credential Stuffing"],
+            "confidence": 0.95,
+            "reasoning": "Brief one-sentence explanation"
+        }
+
+        If you cannot classify, return:
+        {"techniqueIds": [], "techniqueNames": [], "confidence": 0.0, "reasoning": "Cannot classify"}
+        """;
+
+    private final GroqClient groqClient;
+    private final RuleBasedStrategy fallback;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public LlmStrategy(GroqClient groqClient, RuleBasedStrategy fallback) {
+        this.groqClient = groqClient;
+        this.fallback   = fallback;
     }
 
     @Override
     public ClassificationResult classify(Finding finding) {
-        String prompt = "You are a cybersecurity analyst. Analyze this security finding "
-                + "and return the most relevant MITRE ATT&CK technique IDs. "
-                + "Finding: " + finding.getSummary()
-                + " | Source IP: " + finding.getSourceIp()
-                + " | Severity: " + finding.getSeverity();
+        // When Groq is not configured, immediately use rule-based strategy.
+        // This keeps the demo working without any API key.
+        if (!groqClient.isConfigured()) {
+            log.info("[LLM_STRATEGY] Groq not configured — delegating to RuleBasedStrategy");
+            return fallback.classify(finding);
+        }
 
-        String response = llmClient.complete(prompt);
+        try {
+            String userMessage = buildUserMessage(finding);
+            log.info("[LLM_STRATEGY] Sending finding to Groq for MITRE ATT&CK classification");
 
-        // In a real implementation this would parse the LLM's JSON response.
-        // For now return unknown so the Orchestrator falls back to rule-based.
-        return ClassificationResult.unknown();
+            String response = groqClient.chat(MITRE_SYSTEM_PROMPT, userMessage);
+            ClassificationResult result = parseResponse(response, finding);
+
+            log.info("[LLM_STRATEGY] Groq classified: techniques={} confidence={}",
+                    result.getTechniqueIds(), result.getConfidence());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("[LLM_STRATEGY] Groq classification failed: {} — falling back to rules",
+                    e.getMessage());
+            return fallback.classify(finding);
+        }
     }
 
     /**
-     * Parse a structured LLM response into a ClassificationResult.
-     * Placeholder — implement when wiring up the real LLM API.
+     * Builds the user message sent to Groq, including all observable evidence
+     * from the Finding so the model has full context for its classification.
      */
-    public static ClassificationResult parseFromLlm(String llmResponse) {
-        // TODO: parse JSON from LLM response
-        return ClassificationResult.builder()
-                .techniqueIds(List.of())
-                .techniqueNames(List.of())
-                .confidence(0.5)
-                .reason("LLM classification (unparsed): " + llmResponse)
-                .unknown(true)
-                .build();
+    private String buildUserMessage(Finding finding) {
+        return String.format("""
+            Classify this security finding:
+
+            SOURCE IP: %s
+            IS TOR NODE: %s
+            THREAT FEEDS: %d feeds flagged this IP
+            LOGIN HOUR: %d:00 (24h, UTC)
+            LOGIN LATENCY: %dms (robotic speed = <500ms)
+            COUNTRY: RU
+
+            Evidence:
+            %s
+            """,
+            finding.getSourceIp() != null ? finding.getSourceIp() : "unknown",
+            finding.isTorNode() ? "YES — confirmed Tor exit node" : "NO",
+            finding.getFeedCount(),
+            finding.getHour(),
+            finding.getLoginLatencyMs(),
+            finding.getSummary() != null ? finding.getSummary() : "No additional summary"
+        );
+    }
+
+    /**
+     * Parse the JSON response from Groq into a ClassificationResult.
+     * Strips any markdown fences the model may have added despite instructions.
+     * Falls back to rule-based if the JSON is malformed.
+     */
+    private ClassificationResult parseResponse(String response, Finding finding) {
+        try {
+            // Strip ```json ... ``` fences if the model added them despite instructions
+            String clean = response.trim();
+            if (clean.startsWith("```")) {
+                clean = clean.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+            }
+
+            // Find the JSON object boundaries (model sometimes adds preamble text)
+            int start = clean.indexOf('{');
+            int end   = clean.lastIndexOf('}') + 1;
+            if (start == -1 || end == 0) {
+                log.warn("[LLM_STRATEGY] No JSON object found in response — falling back");
+                return fallback.classify(finding);
+            }
+
+            JsonNode root = objectMapper.readTree(clean.substring(start, end));
+
+            List<String> ids   = new ArrayList<>();
+            List<String> names = new ArrayList<>();
+            root.path("techniqueIds").forEach(n   -> ids.add(n.asText()));
+            root.path("techniqueNames").forEach(n -> names.add(n.asText()));
+            double confidence = root.path("confidence").asDouble(0.0);
+            String reasoning  = root.path("reasoning").asText("AI classification");
+
+            if (ids.isEmpty() || confidence == 0.0) {
+                log.info("[LLM_STRATEGY] Groq returned empty/zero-confidence result — falling back");
+                return fallback.classify(finding);
+            }
+
+            return ClassificationResult.builder()
+                    .techniqueIds(ids)
+                    .techniqueNames(names)
+                    .confidence(confidence)
+                    .reason("Groq AI: " + reasoning)
+                    .unknown(false)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("[LLM_STRATEGY] Failed to parse Groq response: {}", e.getMessage());
+            return fallback.classify(finding);
+        }
     }
 }
