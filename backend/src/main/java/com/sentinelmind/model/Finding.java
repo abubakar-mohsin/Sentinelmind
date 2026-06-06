@@ -43,6 +43,11 @@ public class Finding {
     private int hour;
     private int loginLatencyMs;
 
+    // Populated by LlmStrategy when Groq AI is available — the raw reasoning text
+    // returned by the model before it was parsed into techniqueIds/confidence.
+    // Null when running in rule-based fallback mode.
+    private String llmReasoning;
+
     /**
      * Convert severity string to integer level for the Chain of Responsibility.
      * Maps to the constants defined in AbstractEventHandler.

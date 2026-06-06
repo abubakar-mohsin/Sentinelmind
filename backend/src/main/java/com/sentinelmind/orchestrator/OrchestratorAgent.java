@@ -11,7 +11,10 @@ import com.sentinelmind.model.Finding;
 import com.sentinelmind.model.IncidentReport;
 import com.sentinelmind.model.SecurityEvent;
 import com.sentinelmind.model.WebSocketMessage;
+import com.sentinelmind.llm.GroqClient;
 import com.sentinelmind.orchestrator.handlers.AbstractEventHandler;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,6 +51,35 @@ public class OrchestratorAgent {
 
     private static final Logger log = LoggerFactory.getLogger(OrchestratorAgent.class);
 
+    /**
+     * System prompt for the Orchestrator's ReAct reasoning steps.
+     * Instructs the model to return one of six decisions in strict JSON format.
+     * The Orchestrator uses the "decision" field to decide whether to continue,
+     * gather more intel, or dismiss the event as a false positive.
+     */
+    private static final String ORCHESTRATOR_SYSTEM_PROMPT = """
+            You are an autonomous cybersecurity orchestrator AI. You receive security
+            events and agent findings, then decide what to do next.
+
+            You MUST respond ONLY with valid JSON in this exact format — no markdown, no prose:
+            {
+                "decision": "INVESTIGATE_ANOMALY" | "INVESTIGATE_THREAT_INTEL" |
+                            "CLASSIFY_ATTACK" | "AUTHORIZE_RESPONSE" |
+                            "DISMISS" | "GATHER_MORE_INTEL",
+                "confidence": 0.0-1.0,
+                "reasoning": "One sentence explaining your decision",
+                "urgency": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+            }
+
+            Decision guide:
+            - INVESTIGATE_ANOMALY: check if behavior deviates from baseline
+            - INVESTIGATE_THREAT_INTEL: check IP/domain reputation feeds
+            - CLASSIFY_ATTACK: map findings to MITRE ATT&CK techniques
+            - AUTHORIZE_RESPONSE: confidence is high enough, take automated action
+            - DISMISS: this is a false positive, stop investigating
+            - GATHER_MORE_INTEL: need more information before deciding
+            """;
+
     // Per-agent blocking queues — findings arrive asynchronously via onFinding()
     // and are routed here so the ReAct loop can wait for each one.
     private final BlockingQueue<Finding> anomalyQueue     = new LinkedBlockingQueue<>();
@@ -61,6 +93,7 @@ public class OrchestratorAgent {
     private final WebSocketGateway       wsGateway;
     private final IncidentRepository     incidentRepo;
     private final AbstractEventHandler   handlerChain;
+    private final GroqClient             groqClient;   // nullable-safe: isConfigured() checked before use
 
     @Value("${sentinelmind.confidence-threshold:0.92}")
     private double confidenceThreshold;
@@ -74,7 +107,8 @@ public class OrchestratorAgent {
                              ConfidenceCalculator confidenceCalc,
                              WebSocketGateway wsGateway,
                              IncidentRepository incidentRepo,
-                             AbstractEventHandler handlerChain) {
+                             AbstractEventHandler handlerChain,
+                             GroqClient groqClient) {
         this.agentFactory   = agentFactory;
         this.eventProducer  = eventProducer;
         this.graphService   = graphService;
@@ -82,6 +116,7 @@ public class OrchestratorAgent {
         this.wsGateway      = wsGateway;
         this.incidentRepo   = incidentRepo;
         this.handlerChain   = handlerChain;
+        this.groqClient     = groqClient;
     }
 
     /**
@@ -135,6 +170,32 @@ public class OrchestratorAgent {
         }
 
         // ═══════════════════════════════════════════════
+        // ReAct REASONING STEP 1 — Should we investigate threat intel?
+        // Groq reasons over the anomaly evidence and returns a structured decision.
+        // Falls back to "CONTINUE" (proceed with pipeline) when Groq is not configured.
+        // ═══════════════════════════════════════════════
+        String situation1 = String.format(
+                "Security event from IP %s. Anomaly agent reports: z-score=%.2f, " +
+                "severity=%s, login from unusual country at hour %d (off-hours), " +
+                "robotic login latency %dms. " +
+                "Should I investigate threat intelligence reputation feeds on this IP?",
+                event.getSourceIp(),
+                anomalyFinding.getZScore(),
+                anomalyFinding.getSeverity(),
+                event.getHour(),
+                event.getLoginLatencyMs()
+        );
+        String decision1 = askGroq(situation1);
+        log.info("[ORCHESTRATOR] AI decision after anomaly: {}", decision1);
+
+        if ("DISMISS".equals(decision1)) {
+            log.info("[ORCHESTRATOR] AI dismissed this event as low risk after anomaly review");
+            long elapsed1 = System.currentTimeMillis() - startMs;
+            wsGateway.broadcast(WebSocketMessage.incidentContained(incidentId, elapsed1, 0));
+            return;
+        }
+
+        // ═══════════════════════════════════════════════
         // ITERATION 2 — Threat Intelligence
         // ═══════════════════════════════════════════════
         wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "ThreatIntelAgent"));
@@ -150,6 +211,32 @@ public class OrchestratorAgent {
         wsGateway.broadcast(WebSocketMessage.findingCreated(incidentId, threatFinding));
         handlerChain.handle(threatFinding);
         reportBuilder.threatIntelResult(threatFinding.getSummary());
+
+        // ═══════════════════════════════════════════════
+        // ReAct REASONING STEP 2 — Should we classify and authorize response?
+        // Combined evidence: anomaly z-score + threat feed hits + Tor node status.
+        // ═══════════════════════════════════════════════
+        String situation2 = String.format(
+                "Cumulative evidence: anomaly z-score=%.2f. " +
+                "Threat intelligence: IP %s is %s, flagged by %d threat feeds, " +
+                "isTorNode=%s. " +
+                "Should I proceed to MITRE ATT&CK classification and potentially " +
+                "authorize an automated containment response?",
+                anomalyFinding.getZScore(),
+                event.getSourceIp(),
+                threatFinding.isMalicious() ? "MALICIOUS" : "CLEAN",
+                threatFinding.getFeedCount(),
+                threatFinding.isTorNode() ? "YES" : "NO"
+        );
+        String decision2 = askGroq(situation2);
+        log.info("[ORCHESTRATOR] AI decision after threat intel: {}", decision2);
+
+        if ("DISMISS".equals(decision2)) {
+            log.info("[ORCHESTRATOR] AI dismissed after threat intel — likely false positive");
+            long elapsed2 = System.currentTimeMillis() - startMs;
+            wsGateway.broadcast(WebSocketMessage.incidentContained(incidentId, elapsed2, 0));
+            return;
+        }
 
         // ═══════════════════════════════════════════════
         // ITERATION 3 — Threat Classification
@@ -232,6 +319,55 @@ public class OrchestratorAgent {
             case "ThreatIntelAgent"        -> threatIntelQueue.offer(finding);
             case "ThreatClassifierAgent"   -> classifierQueue.offer(finding);
             default -> log.debug("[ORCHESTRATOR] Ignoring finding from {}", finding.getAgentName());
+        }
+    }
+
+    /**
+     * Ask Groq what to do next in the ReAct reasoning loop.
+     *
+     * This is the "Reason" step of ReAct: given the current situation (expressed as a
+     * natural-language string), the AI decides which action to take next.
+     * The returned decision string (e.g. "INVESTIGATE_THREAT_INTEL", "DISMISS") drives
+     * whether the Orchestrator continues, skips steps, or stops early.
+     *
+     * Falls back to "CONTINUE" (always proceed) when Groq is not configured,
+     * so the pipeline degrades gracefully to fully rule-based behaviour in demo/mock mode.
+     */
+    private String askGroq(String situation) {
+        if (!groqClient.isConfigured()) {
+            log.debug("[ORCHESTRATOR] Groq not configured — skipping AI reasoning, using CONTINUE");
+            return "CONTINUE";
+        }
+
+        try {
+            String response = groqClient.chat(ORCHESTRATOR_SYSTEM_PROMPT, situation);
+
+            // Broadcast raw AI reasoning to the React dashboard (type=AI_REASONING)
+            wsGateway.broadcast(WebSocketMessage.builder()
+                    .type("AI_REASONING")
+                    .message(response)
+                    .timestamp(java.time.Instant.now().toString())
+                    .build());
+
+            // Extract the "decision" field from the JSON response
+            String clean = response.trim();
+            if (clean.startsWith("```")) {
+                clean = clean.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+            }
+            int start = clean.indexOf('{');
+            int end   = clean.lastIndexOf('}') + 1;
+            if (start == -1 || end == 0) return "CONTINUE";
+
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(clean.substring(start, end));
+            String decision = root.path("decision").asText("CONTINUE");
+            String reasoning = root.path("reasoning").asText("");
+            log.info("[ORCHESTRATOR] Groq decision='{}' reasoning='{}'", decision, reasoning);
+            return decision;
+
+        } catch (Exception e) {
+            log.error("[ORCHESTRATOR] askGroq failed: {} — defaulting to CONTINUE", e.getMessage());
+            return "CONTINUE";
         }
     }
 

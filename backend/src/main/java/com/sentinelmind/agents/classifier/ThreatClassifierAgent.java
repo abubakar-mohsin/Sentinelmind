@@ -7,6 +7,7 @@ import com.sentinelmind.model.Finding;
 import com.sentinelmind.model.SecurityEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -17,10 +18,10 @@ import java.util.List;
  *
  * Uses the Strategy pattern (Bonus pattern — Gang of Four):
  *   - Injects ClassificationStrategy BY INTERFACE, not by concrete type.
- *   - In mock profile: Spring finds only RuleBasedStrategy → injected as primaryStrategy.
- *   - In real profile:  LlmStrategy is @Primary → injected as primaryStrategy automatically.
- *     RuleBasedStrategy is always available as the explicit fallback.
- *   - The agent never knows which strategy is active — it just calls classify().
+ *   - LlmStrategy is @Primary and @Qualifier("llmStrategy") — always injected as primaryStrategy.
+ *   - LlmStrategy internally falls back to RuleBasedStrategy when GROQ_API_KEY is not set,
+ *     so the demo ALWAYS works without any API key (mock mode behaviour is unchanged).
+ *   - The agent never knows whether LLM or rules ran — it just calls classify().
  *     That IS the Strategy pattern.
  *
  * Demo result: T1078 (Valid Accounts) + T1110.004 (Credential Stuffing), confidence=1.0
@@ -40,7 +41,7 @@ public class ThreatClassifierAgent implements ISecurityAgent {
 
     private final EventProducer eventProducer;
 
-    public ThreatClassifierAgent(ClassificationStrategy primaryStrategy,
+    public ThreatClassifierAgent(@Qualifier("llmStrategy") ClassificationStrategy primaryStrategy,
                                  RuleBasedStrategy fallbackStrategy,
                                  EventProducer eventProducer) {
         this.primaryStrategy  = primaryStrategy;

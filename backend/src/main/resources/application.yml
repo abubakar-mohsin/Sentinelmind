@@ -38,3 +38,13 @@ server:
 sentinelmind:
   confidence-threshold: 0.92
   react-max-iterations: 5
+
+# Groq LLM configuration — used by GroqClient for real AI reasoning.
+# api-key defaults to "not-set" when GROQ_API_KEY is not in the environment.
+# The system works in full demo mode without a key; set it for live AI reasoning.
+groq:
+  api-key: ${GROQ_API_KEY:not-set}
+  model: llama-3.3-70b-versatile
+  base-url: https://api.groq.com/openai/v1
+  max-tokens: 1024
+  temperature: 0.1
