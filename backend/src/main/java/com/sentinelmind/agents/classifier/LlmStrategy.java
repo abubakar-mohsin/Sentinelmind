@@ -1,6 +1,7 @@
 package com.sentinelmind.agents.classifier;
 
 import com.sentinelmind.model.Finding;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,7 @@ import java.util.List;
  * primary strategy and fall back to RuleBasedStrategy if the LLM returns unknown.
  */
 @Component
+@Primary          // In "real" profile this is the preferred ClassificationStrategy bean
 @Profile("real")
 public class LlmStrategy implements ClassificationStrategy {
 

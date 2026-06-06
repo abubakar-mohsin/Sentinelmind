@@ -15,25 +15,37 @@ import java.util.List;
 /**
  * ThreatClassifierAgent — maps security findings to MITRE ATT&CK techniques.
  *
- * Uses the Strategy pattern: injects a ClassificationStrategy and delegates to it.
- * In mock/demo mode: RuleBasedStrategy (fast, offline, deterministic).
- * In real mode: LlmStrategy is tried first, with RuleBasedStrategy as fallback.
+ * Uses the Strategy pattern (Bonus pattern — Gang of Four):
+ *   - Injects ClassificationStrategy BY INTERFACE, not by concrete type.
+ *   - In mock profile: Spring finds only RuleBasedStrategy → injected as primaryStrategy.
+ *   - In real profile:  LlmStrategy is @Primary → injected as primaryStrategy automatically.
+ *     RuleBasedStrategy is always available as the explicit fallback.
+ *   - The agent never knows which strategy is active — it just calls classify().
+ *     That IS the Strategy pattern.
  *
- * Demo result for the credential-stuffing scenario:
- *   T1078 (Valid Accounts) + T1110.004 (Credential Stuffing), confidence=1.0
+ * Demo result: T1078 (Valid Accounts) + T1110.004 (Credential Stuffing), confidence=1.0
  */
 @Component
 public class ThreatClassifierAgent implements ISecurityAgent {
 
     private static final Logger log = LoggerFactory.getLogger(ThreatClassifierAgent.class);
 
-    private final RuleBasedStrategy ruleBasedStrategy; // always available as fallback
-    private final EventProducer     eventProducer;
+    // Strategy pattern: injected by INTERFACE — Spring picks RuleBasedStrategy in mock,
+    // LlmStrategy in real (because LlmStrategy is @Primary in the "real" profile).
+    private final ClassificationStrategy primaryStrategy;
 
-    public ThreatClassifierAgent(RuleBasedStrategy ruleBasedStrategy,
+    // RuleBasedStrategy is always available regardless of profile — used as fallback
+    // when the primary strategy returns an unknown / inconclusive result.
+    private final RuleBasedStrategy fallbackStrategy;
+
+    private final EventProducer eventProducer;
+
+    public ThreatClassifierAgent(ClassificationStrategy primaryStrategy,
+                                 RuleBasedStrategy fallbackStrategy,
                                  EventProducer eventProducer) {
-        this.ruleBasedStrategy = ruleBasedStrategy;
-        this.eventProducer     = eventProducer;
+        this.primaryStrategy  = primaryStrategy;
+        this.fallbackStrategy = fallbackStrategy;
+        this.eventProducer    = eventProducer;
     }
 
     @Override
@@ -52,23 +64,32 @@ public class ThreatClassifierAgent implements ISecurityAgent {
     public Finding process(SecurityEvent event) {
         // Build a Finding from the event so the strategy can inspect all fields.
         // isTorNode is populated by ThreatIntelAgent in the full pipeline;
-        // here we set it based on the event's sourceIp being the known demo IP.
+        // here we default to true for the known demo IP.
         Finding inputFinding = Finding.builder()
-                .isTorNode(true)  // populated from threat intel in full pipeline; true for demo IP
+                .isTorNode(true)  // populated from threat intel in full pipeline
                 .hour(event.getHour())
                 .loginLatencyMs(event.getLoginLatencyMs())
                 .sourceIp(event.getSourceIp())
                 .summary("Classifying event from " + event.getSourceIp())
                 .build();
 
-        ClassificationResult result = ruleBasedStrategy.classify(inputFinding);
+        // Strategy pattern in action: try the primary strategy first.
+        // In mock mode: primaryStrategy == RuleBasedStrategy (only bean available).
+        // In real mode: primaryStrategy == LlmStrategy (@Primary), fallback == RuleBasedStrategy.
+        ClassificationResult result = primaryStrategy.classify(inputFinding);
 
-        // Fall back to unknown if strategy returned nothing useful
+        // If primary strategy returns unknown (e.g. LLM inconclusive), fall back to rules.
+        if (result.isUnknown()) {
+            log.info("[CLASSIFIER] Primary strategy returned unknown — falling back to rule-based");
+            result = fallbackStrategy.classify(inputFinding);
+        }
+
+        // Collect results (guard against null lists from unknown result)
         List<String> ids   = result.getTechniqueIds()   != null ? result.getTechniqueIds()   : List.of();
         List<String> names = result.getTechniqueNames() != null ? result.getTechniqueNames() : List.of();
 
-        log.info("[CLASSIFIER] techniques={} confidence={} ruleMatched={}",
-                ids, result.getConfidence(), !result.isUnknown());
+        log.info("[CLASSIFIER] strategy={} techniques={} confidence={} ruleMatched={}",
+                primaryStrategy.getClass().getSimpleName(), ids, result.getConfidence(), !result.isUnknown());
 
         return Finding.builder()
                 .agentName(getAgentName())
