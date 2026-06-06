@@ -2,6 +2,7 @@ package com.sentinelmind.orchestrator.handlers;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 /**
  * HandlerChainConfig — wires the Chain of Responsibility into a single bean.
@@ -35,8 +36,14 @@ public class HandlerChainConfig {
     /**
      * Build and return the head of the severity escalation chain.
      * Inject this bean wherever you need to handle a Finding.
+     *
+     * @Primary tells Spring to inject THIS assembled chain whenever
+     * AbstractEventHandler is requested — not one of the four individual
+     * handler beans (Low/Medium/High/CriticalSeverityHandler) that are
+     * also registered as @Component beans of the same type.
      */
     @Bean
+    @Primary
     public AbstractEventHandler severityHandlerChain() {
         lowHandler.setNextHandler(mediumHandler);
         mediumHandler.setNextHandler(highHandler);

@@ -38,3 +38,13 @@ server:
 sentinelmind:
   confidence-threshold: 0.92
   react-max-iterations: 5
+
+# Actuator health tuning:
+# The Neo4j reactive health indicator runs a Cypher round-trip on every
+# /actuator/health call. On first warmup this takes 10+ seconds — longer
+# than the Docker health-check timeout. Disable it here; the app still
+# connects to Neo4j normally, this only suppresses the health-check query.
+management:
+  health:
+    neo4j:
+      enabled: false
