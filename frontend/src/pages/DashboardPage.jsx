@@ -3,6 +3,7 @@ import { useWebSocket }    from '../ws/useWebSocket';
 import Sidebar             from '../components/layout/Sidebar';
 import DashboardHeader     from '../components/layout/DashboardHeader';
 import AgentPipeline       from '../components/AgentPipeline';
+import AIReasoningPanel    from '../components/AIReasoningPanel';
 import ThreatMatrix        from '../components/ThreatMatrix';
 import ResponseLog         from '../components/ResponseLog';
 import AlertQueue          from '../components/AlertQueue';
@@ -52,6 +53,7 @@ export default function DashboardPage() {
   const [responses,      setResponses]      = useState([]);
   const [incidents,      setIncidents]      = useState([]);
   const [metrics,        setMetrics]        = useState(INITIAL_METRICS);
+  const [reasoningSteps, setReasoningSteps] = useState([]);
 
   const currentIdRef    = useRef(null);
   const activatedAtRef  = useRef(null);
@@ -75,15 +77,31 @@ export default function DashboardPage() {
       setResponses([]);
       setClassifiedData(null);
       setMetrics(INITIAL_METRICS);
+      setReasoningSteps([]);
     }
 
     switch (msg.type) {
       case 'AGENT_ACTIVATED':
-        if (msg.agentName === 'OrchestratorAgent') break;
+        if (msg.agentName === 'OrchestratorAgent') {
+          setReasoningSteps([]);
+          break;
+        }
         setAgentStates(prev => ({
           ...prev,
           [msg.agentName]: { status: 'RUNNING', summary: null, elapsed: null, startTime: Date.now() },
         }));
+        break;
+
+      case 'AI_REASONING':
+        setReasoningSteps(prev => [...prev, {
+          timestamp:  msg.timestamp,
+          agentName:  msg.agentName,
+          decision:   msg.agentStatus,
+          reasoning:  msg.message,
+          situation:  msg.summary,
+          dataSource: msg.dataSource,
+          stepNumber: prev.length + 1,
+        }]);
         break;
 
       case 'FINDING_CREATED':
@@ -120,6 +138,15 @@ export default function DashboardPage() {
           actionsExecuted: msg.actionsExecuted,
         }));
         setResponses(prev => [...prev, { ...msg, isContained: true, receivedAt: Date.now() }]);
+        setAgentStates(prev => ({
+          ...prev,
+          IncidentResponderAgent: {
+            ...prev.IncidentResponderAgent,
+            status:  'COMPLETE',
+            summary: `Playbook complete - ${msg.actionsExecuted} action${msg.actionsExecuted !== 1 ? 's' : ''} in ${msg.totalElapsedMs}ms`,
+            elapsed: msg.totalElapsedMs,
+          },
+        }));
         break;
 
       default: break;
@@ -190,6 +217,8 @@ export default function DashboardPage() {
             <AgentPipeline agentStates={agentStates} />
             <ThreatMatrix  classifiedData={classifiedData} />
           </div>
+
+          <AIReasoningPanel reasoningSteps={reasoningSteps} incidentActive={incidentActive} />
 
           {/* Bottom grid: alerts + response log + topology */}
           <div className="dashboard-bottom">

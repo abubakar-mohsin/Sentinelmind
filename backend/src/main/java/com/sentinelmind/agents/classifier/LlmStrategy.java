@@ -2,13 +2,16 @@ package com.sentinelmind.agents.classifier;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sentinelmind.api.WebSocketGateway;
 import com.sentinelmind.llm.GroqClient;
 import com.sentinelmind.model.Finding;
+import com.sentinelmind.model.WebSocketMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,6 +39,12 @@ public class LlmStrategy implements ClassificationStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(LlmStrategy.class);
 
+    private static final String RULE_BASED_MESSAGE =
+            "Groq API unavailable. Rule-based classification applied: Tor exit node, off-hours login, and robotic latency match a credential stuffing pattern. This is not AI reasoning.";
+
+    private static final String RULE_BASED_SUMMARY =
+            "Fallback techniques: T1078, T1110.004 | Confidence: 1.0 (rule match, not AI-computed)";
+
     /**
      * The system prompt that shapes the model's response format.
      * We demand strict JSON so we can parse it reliably.
@@ -58,11 +67,13 @@ public class LlmStrategy implements ClassificationStrategy {
 
     private final GroqClient groqClient;
     private final RuleBasedStrategy fallback;
+    private final WebSocketGateway wsGateway;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public LlmStrategy(GroqClient groqClient, RuleBasedStrategy fallback) {
+    public LlmStrategy(GroqClient groqClient, RuleBasedStrategy fallback, WebSocketGateway wsGateway) {
         this.groqClient = groqClient;
         this.fallback   = fallback;
+        this.wsGateway  = wsGateway;
     }
 
     @Override
@@ -71,6 +82,7 @@ public class LlmStrategy implements ClassificationStrategy {
         // This keeps the demo working without any API key.
         if (!groqClient.isConfigured()) {
             log.info("[LLM_STRATEGY] Groq not configured — delegating to RuleBasedStrategy");
+            broadcastRuleBasedFallback();
             return fallback.classify(finding);
         }
 
@@ -89,6 +101,7 @@ public class LlmStrategy implements ClassificationStrategy {
         } catch (Exception e) {
             log.error("[LLM_STRATEGY] Groq classification failed: {} — falling back to rules",
                     e.getMessage());
+            broadcastRuleBasedFallback();
             return fallback.classify(finding);
         }
     }
@@ -138,6 +151,7 @@ public class LlmStrategy implements ClassificationStrategy {
             int end   = clean.lastIndexOf('}') + 1;
             if (start == -1 || end == 0) {
                 log.warn("[LLM_STRATEGY] No JSON object found in response — falling back");
+                broadcastRuleBasedFallback();
                 return fallback.classify(finding);
             }
 
@@ -152,8 +166,19 @@ public class LlmStrategy implements ClassificationStrategy {
 
             if (ids.isEmpty() || confidence == 0.0) {
                 log.info("[LLM_STRATEGY] Groq returned empty/zero-confidence result — falling back");
+                broadcastRuleBasedFallback();
                 return fallback.classify(finding);
             }
+
+            wsGateway.broadcast(WebSocketMessage.builder()
+                    .type("AI_REASONING")
+                    .timestamp(Instant.now().toString())
+                    .agentName("ThreatClassifierAgent")
+                    .dataSource("GROQ_AI")
+                    .agentStatus("CLASSIFICATION_COMPLETE")
+                    .message(reasoning)
+                    .summary("Techniques: " + String.join(", ", ids) + " | Confidence: " + confidence)
+                    .build());
 
             return ClassificationResult.builder()
                     .techniqueIds(ids)
@@ -165,7 +190,20 @@ public class LlmStrategy implements ClassificationStrategy {
 
         } catch (Exception e) {
             log.error("[LLM_STRATEGY] Failed to parse Groq response: {}", e.getMessage());
+            broadcastRuleBasedFallback();
             return fallback.classify(finding);
         }
+    }
+
+    private void broadcastRuleBasedFallback() {
+        wsGateway.broadcast(WebSocketMessage.builder()
+                .type("AI_REASONING")
+                .timestamp(Instant.now().toString())
+                .agentName("ThreatClassifierAgent")
+                .dataSource("RULE_BASED")
+                .agentStatus("RULE_BASED_CLASSIFICATION")
+                .message(RULE_BASED_MESSAGE)
+                .summary(RULE_BASED_SUMMARY)
+                .build());
     }
 }

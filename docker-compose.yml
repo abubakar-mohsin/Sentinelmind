@@ -111,6 +111,8 @@ services:
   # To use real APIs: change SPRING_PROFILES_ACTIVE to "real"
   # ─────────────────────────────────────────────
   backend:
+    extra_hosts:
+    - "api.groq.com:172.64.149.20"
     build:
       context: ./backend
       dockerfile: Dockerfile

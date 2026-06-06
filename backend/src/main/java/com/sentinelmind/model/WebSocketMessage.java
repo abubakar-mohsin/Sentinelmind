@@ -24,6 +24,7 @@ public class WebSocketMessage {
     private String incidentId;
     private String agentName;
     private String agentStatus;
+    private String dataSource;
     private String message;
     private String severity;
     private double confidence;

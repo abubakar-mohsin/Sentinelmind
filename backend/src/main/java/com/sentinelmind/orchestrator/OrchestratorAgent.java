@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -185,7 +186,7 @@ public class OrchestratorAgent {
                 event.getHour(),
                 event.getLoginLatencyMs()
         );
-        String decision1 = askGroq(situation1);
+        String decision1 = askGroq(situation1, incidentId);
         log.info("[ORCHESTRATOR] AI decision after anomaly: {}", decision1);
 
         if ("DISMISS".equals(decision1)) {
@@ -228,7 +229,7 @@ public class OrchestratorAgent {
                 threatFinding.getFeedCount(),
                 threatFinding.isTorNode() ? "YES" : "NO"
         );
-        String decision2 = askGroq(situation2);
+        String decision2 = askGroq(situation2, incidentId);
         log.info("[ORCHESTRATOR] AI decision after threat intel: {}", decision2);
 
         if ("DISMISS".equals(decision2)) {
@@ -333,21 +334,21 @@ public class OrchestratorAgent {
      * Falls back to "CONTINUE" (always proceed) when Groq is not configured,
      * so the pipeline degrades gracefully to fully rule-based behaviour in demo/mock mode.
      */
-    private String askGroq(String situation) {
+    private String askGroq(String situation, String incidentId) {
         if (!groqClient.isConfigured()) {
             log.debug("[ORCHESTRATOR] Groq not configured — skipping AI reasoning, using CONTINUE");
+            broadcastAiReasoning(
+                    incidentId,
+                    "RULE_BASED",
+                    "RULE_BASED_DECISION",
+                    "Rule-based fallback: Groq API not configured. Proceeding automatically based on the confidence threshold calculation. This is not AI reasoning.",
+                    situation
+            );
             return "CONTINUE";
         }
 
         try {
             String response = groqClient.chat(ORCHESTRATOR_SYSTEM_PROMPT, situation);
-
-            // Broadcast raw AI reasoning to the React dashboard (type=AI_REASONING)
-            wsGateway.broadcast(WebSocketMessage.builder()
-                    .type("AI_REASONING")
-                    .message(response)
-                    .timestamp(java.time.Instant.now().toString())
-                    .build());
 
             // Extract the "decision" field from the JSON response
             String clean = response.trim();
@@ -356,19 +357,58 @@ public class OrchestratorAgent {
             }
             int start = clean.indexOf('{');
             int end   = clean.lastIndexOf('}') + 1;
-            if (start == -1 || end == 0) return "CONTINUE";
+            if (start == -1 || end == 0) {
+                broadcastAiReasoning(
+                        incidentId,
+                        "RULE_BASED",
+                        "RULE_BASED_FALLBACK",
+                        "Groq returned an unparseable response. Falling back to the rule-based investigation pipeline. This is not AI reasoning.",
+                        situation
+                );
+                return "CONTINUE";
+            }
 
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(clean.substring(start, end));
             String decision = root.path("decision").asText("CONTINUE");
             String reasoning = root.path("reasoning").asText("");
             log.info("[ORCHESTRATOR] Groq decision='{}' reasoning='{}'", decision, reasoning);
+
+            broadcastAiReasoning(
+                    incidentId,
+                    "GROQ_AI",
+                    decision,
+                    reasoning,
+                    situation
+            );
+
             return decision;
 
         } catch (Exception e) {
             log.error("[ORCHESTRATOR] askGroq failed: {} — defaulting to CONTINUE", e.getMessage());
+            broadcastAiReasoning(
+                    incidentId,
+                    "RULE_BASED",
+                    "RULE_BASED_FALLBACK",
+                    "Groq API unavailable. Falling back to a rule-based decision and continuing the investigation pipeline. This is not AI reasoning.",
+                    situation
+            );
             return "CONTINUE";
         }
+    }
+
+    private void broadcastAiReasoning(String incidentId, String dataSource, String status,
+                                      String message, String summary) {
+        wsGateway.broadcast(WebSocketMessage.builder()
+                .type("AI_REASONING")
+                .incidentId(incidentId)
+                .timestamp(Instant.now().toString())
+                .agentName("OrchestratorAgent")
+                .dataSource(dataSource)
+                .agentStatus(status)
+                .message(message)
+                .summary(summary)
+                .build());
     }
 
     /** Block until a finding arrives or timeout expires. Returns null on timeout. */

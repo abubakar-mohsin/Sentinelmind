@@ -99,9 +99,9 @@ class ConfidenceCalculatorTest {
     @Test
     void ruleNotMatched_reducesClassifierContribution() {
         double matched    = calc.calculate(8.7, 4, true);   // 0.961
-        double notMatched = calc.calculate(8.7, 4, false);  // 0.87×0.30+0.40+0.3×0.30 = 0.752
+        double notMatched = calc.calculate(8.7, 4, false);  // 0.87×0.30+0.40+0.3×0.30 = 0.751
         assertTrue(matched > notMatched,
                 "Rule match must increase confidence over no-match");
-        assertEquals(0.752, notMatched, 0.001);
+        assertEquals(0.751, notMatched, 0.001);
     }
 }
