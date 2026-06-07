@@ -37,6 +37,8 @@ public class Finding {
     // ThreatIntelAgent populates these
     private int feedCount;
     private boolean isTorNode;
+    // true when VirusTotalAdapter was used (LIVE mode); false when MockThreatFeed was used
+    private boolean usedRealApi;
 
     // ThreatClassifierAgent populates this
     private boolean ruleMatched;

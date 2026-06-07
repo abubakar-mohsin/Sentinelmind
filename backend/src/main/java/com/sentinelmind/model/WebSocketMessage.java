@@ -41,6 +41,8 @@ public class WebSocketMessage {
     private long totalElapsedMs;
     private int actionsExecuted;
     private Map<String, Object> details;
+    // Set on FINDING_CREATED messages from ThreatIntelAgent
+    private boolean usedRealApi;
 
     // ── Static factory methods ────────────────────────────────────────────────
 
@@ -68,6 +70,7 @@ public class WebSocketMessage {
                 .confidence(finding.getConfidence())
                 .summary(finding.getSummary())
                 .reason(finding.getReason())
+                .usedRealApi(finding.isUsedRealApi())
                 .message(finding.getAgentName() + " completed analysis")
                 .build();
     }

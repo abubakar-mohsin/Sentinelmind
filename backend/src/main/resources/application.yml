@@ -39,6 +39,12 @@ sentinelmind:
   confidence-threshold: 0.92
   react-max-iterations: 5
 
+# VirusTotal API — used by VirusTotalApiClientImpl when LIVE mode is active.
+# Get a free key at https://www.virustotal.com/gui/my-apikey
+# Without a key the adapter returns 0 malicious votes gracefully.
+virustotal:
+  api-key: ${VIRUSTOTAL_API_KEY:not-set}
+
 # Groq LLM configuration — used by GroqClient for real AI reasoning.
 # api-key defaults to "not-set" when GROQ_API_KEY is not in the environment.
 # The system works in full demo mode without a key; set it for live AI reasoning.

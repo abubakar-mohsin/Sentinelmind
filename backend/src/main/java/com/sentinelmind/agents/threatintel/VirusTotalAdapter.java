@@ -1,6 +1,5 @@
 package com.sentinelmind.agents.threatintel;
 
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,10 +16,10 @@ import org.springframework.stereotype.Component;
  * but internally uses AdvancedMediaPlayer (VirusTotalApiClient).
  * The ThreatIntelAgent never knows which one is behind the interface.
  *
- * Only active under @Profile("real") — never loaded in demo/mock mode.
+ * Always loaded as a bean (no @Profile restriction). The dashboard toggle
+ * activates this feed at runtime via ThreatIntelConfigService.
  */
 @Component
-@Profile("real")
 public class VirusTotalAdapter implements IThreatFeed {
 
     private final VirusTotalApiClient virusTotalClient;

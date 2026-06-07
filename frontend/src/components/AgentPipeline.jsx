@@ -36,7 +36,24 @@ function AgentIcon({ path, color }) {
   );
 }
 
-function AgentCard({ agent, state }) {
+/**
+ * Derive the data-source badge for the ThreatIntelAgent card.
+ * Returns null for all other agents or when the agent hasn't completed yet.
+ */
+function getThreatIntelBadge(state) {
+  if (!state || state.status !== 'COMPLETE') return null;
+  if (state.usedRealApi === true) {
+    return state.isMalicious
+      ? { text: '✓ VIRUSTOTAL LIVE', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)' }
+      : { text: '⚠ VIRUSTOTAL: 0 FLAGS', color: '#eab308', bg: 'rgba(234,179,8,0.1)', border: 'rgba(234,179,8,0.3)' };
+  }
+  if (state.usedRealApi === false) {
+    return { text: '⚠ MOCK DATA', color: '#f97316', bg: 'rgba(249,115,22,0.1)', border: 'rgba(249,115,22,0.3)' };
+  }
+  return null;
+}
+
+function AgentCard({ agent, state, badge }) {
   const { status = 'IDLE', summary = null, elapsed = null } = state || {};
 
   const statusConfig = {
@@ -112,6 +129,23 @@ function AgentCard({ agent, state }) {
           {summary}
         </div>
       )}
+
+      {/* Data-source badge — only on ThreatIntelAgent after completion */}
+      {badge && (
+        <div style={{
+          marginTop: 7,
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          padding: '2px 8px',
+          background: badge.bg,
+          border: `1px solid ${badge.border}`,
+          borderRadius: 4,
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+          color: badge.color,
+          animation: 'fade-in 0.3s ease',
+        }}>
+          {badge.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -168,7 +202,13 @@ export default function AgentPipeline({ agentStates }) {
       <div className="agent-row">
         {AGENTS.map((agent, i) => (
           <React.Fragment key={agent.key}>
-            <AgentCard agent={agent} state={agentStates[agent.key]} />
+            <AgentCard
+              agent={agent}
+              state={agentStates[agent.key]}
+              badge={agent.key === 'ThreatIntelAgent'
+                ? getThreatIntelBadge(agentStates['ThreatIntelAgent'])
+                : null}
+            />
             {i < AGENTS.length - 1 && <Connector active={isConnectorActive(i)} />}
           </React.Fragment>
         ))}

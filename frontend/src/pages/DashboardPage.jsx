@@ -129,7 +129,21 @@ export default function DashboardPage() {
         setAgentStates(prev => {
           const a = prev[msg.agentName];
           if (!a) return prev;
-          return { ...prev, [msg.agentName]: { ...a, status: 'COMPLETE', summary: msg.summary || msg.message, elapsed: a.startTime ? Date.now() - a.startTime : null } };
+          // For ThreatIntelAgent, also store usedRealApi and isMalicious so
+          // AgentPipeline can show the VIRUSTOTAL LIVE / MOCK DATA badge.
+          const extra = msg.agentName === 'ThreatIntelAgent'
+            ? { usedRealApi: msg.usedRealApi, isMalicious: msg.confidence > 0 }
+            : {};
+          return {
+            ...prev,
+            [msg.agentName]: {
+              ...a,
+              status:  'COMPLETE',
+              summary: msg.summary || msg.message,
+              elapsed: a.startTime ? Date.now() - a.startTime : null,
+              ...extra,
+            },
+          };
         });
         break;
 

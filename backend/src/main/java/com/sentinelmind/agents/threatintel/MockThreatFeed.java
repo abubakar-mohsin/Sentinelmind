@@ -1,25 +1,28 @@
 package com.sentinelmind.agents.threatintel;
 
-import org.springframework.context.annotation.Profile;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
 
 /**
- * MockThreatFeed — Adapter Pattern (Lab 5), active in the "mock" profile
+ * MockThreatFeed — Adapter Pattern (Lab 5)
  *
  * This is the "VlcPlayer" from Lab 5 — it already speaks our IThreatFeed
  * interface natively, so no translation is needed.
  *
- * In demo mode (default), this is the only threat feed active.
- * It contains a hard-coded list of known Tor exit nodes and bad IPs
- * so the demo always works without any external API keys.
+ * Always loaded as a bean (no @Profile restriction). The dashboard toggle
+ * calls ThreatIntelConfigService to switch between this and VirusTotalAdapter
+ * at runtime without restarting the application.
+ *
+ * @Primary makes this the default when IThreatFeed is injected without a
+ * qualifier — safe fallback if anything ever bypasses the qualified injection.
  *
  * The IP 185.220.101.47 is a real-world Tor exit node and is guaranteed
  * to trigger a CRITICAL result in the demo scenario.
  */
 @Component
-@Profile("mock")
+@Primary
 public class MockThreatFeed implements IThreatFeed {
 
     private static final Set<String> BAD_IPS = Set.of(

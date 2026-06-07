@@ -341,6 +341,13 @@ public class OrchestratorAgent {
                 Math.min(anomalyFinding.getZScore() / 10.0, 1.0) * 0.30
                 + (threatFinding.getFeedCount() >= 1 ? 1.0 : 0.0) * 0.40
         );
+        // In LIVE mode with a clean VirusTotal result, tell Groq so it can acknowledge
+        // the real-world limitation and explain why confidence will be lower.
+        if (threatFinding.isUsedRealApi() && !threatFinding.isMalicious()) {
+            situation2 += "\n\nNOTE: Live VirusTotal returned 0 flags. This IP may not be in current " +
+                          "threat databases. Confidence will be lower than in mock mode.";
+        }
+
         String decision2 = askGroq(situation2, incidentId);
         log.info("[ORCHESTRATOR] AI decision after threat intel: {}", decision2);
 

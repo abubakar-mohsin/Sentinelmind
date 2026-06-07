@@ -120,8 +120,9 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Spring profile controls mock vs real external APIs
-      SPRING_PROFILES_ACTIVE: real
+      # Spring profile — both MockThreatFeed and VirusTotalAdapter are now always
+      # loaded regardless of profile. The dashboard toggle controls which one runs.
+      SPRING_PROFILES_ACTIVE: mock
 
       # Kafka
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
