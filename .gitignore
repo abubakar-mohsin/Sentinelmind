@@ -12,6 +12,11 @@ backend/target/
 *.jar
 *.war
 
+# JVM crash logs
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
 # Node/React
 frontend/node_modules/
 frontend/build/
@@ -32,5 +37,3 @@ Thumbs.db
 
 # Claude Code worktrees
 .claude/
-
-backend/target/
