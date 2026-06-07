@@ -135,12 +135,29 @@ public class OrchestratorAgent {
         // Broadcast: Orchestrator woke up
         wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "OrchestratorAgent"));
 
-        // --- REASON: Query Neo4j for context ---
+        // --- REASON: Query Neo4j for context (parameterized — no string concatenation) ---
+        // Also reads incidentCount so we can warn if this IP has attacked before.
         Map<String, Object> ipContext = graphService.queryOne(
-            "MATCH (ip:IP {address: '" + event.getSourceIp() + "'}) " +
-            "RETURN ip.isTorNode AS isTorNode, ip.feedCount AS feedCount, ip.reputation AS reputation"
+            "MATCH (ip:IP {address: $address}) " +
+            "RETURN ip.isTorNode AS isTorNode, ip.feedCount AS feedCount, " +
+            "ip.reputation AS reputation, ip.incidentCount AS incidentCount, " +
+            "ip.lastIncidentId AS lastIncidentId",
+            Map.of("address", event.getSourceIp())
         );
-        log.info("[ORCHESTRATOR] Graph context for ip={}: {}", event.getSourceIp(), ipContext);
+        if (ipContext != null) {
+            Object prevCount = ipContext.get("incidentCount");
+            if (prevCount != null && ((Number) prevCount).intValue() > 0) {
+                log.warn("[ORCHESTRATOR] REPEAT ATTACKER: ip={} seen in {} previous incident(s). Last incidentId={}",
+                    event.getSourceIp(), prevCount, ipContext.get("lastIncidentId"));
+            } else {
+                log.info("[ORCHESTRATOR] Graph context — ip={} reputation={} isTorNode={} feedCount={}",
+                    event.getSourceIp(), ipContext.get("reputation"),
+                    ipContext.get("isTorNode"), ipContext.get("feedCount"));
+            }
+        } else {
+            log.info("[ORCHESTRATOR] ip={} not found in knowledge graph — new or unknown attacker",
+                event.getSourceIp());
+        }
 
         // Build the incident report incrementally using the Builder pattern
         IncidentReport.Builder reportBuilder = new IncidentReport.Builder()
@@ -302,6 +319,12 @@ public class OrchestratorAgent {
             long elapsed = System.currentTimeMillis() - startMs;
             wsGateway.broadcast(WebSocketMessage.incidentContained(incidentId, elapsed, 0));
         }
+
+        // Write attack evidence back to the knowledge graph so it grows with every demo run:
+        // incidentCount increments on the IP node, ATTACKED edges accumulate per incident,
+        // and USED_TECHNIQUE edges link this IP to the matched MITRE AttackTechnique nodes.
+        writeIncidentToGraph(incidentId, event, confidence, mitreIds,
+                System.currentTimeMillis() - startMs);
     }
 
     /**
@@ -429,6 +452,87 @@ public class OrchestratorAgent {
         if (confidence >= 0.70) return "HIGH";
         if (confidence >= 0.40) return "MEDIUM";
         return "LOW";
+    }
+
+    /**
+     * Write the results of this incident back to Neo4j.
+     *
+     * Three writes per incident:
+     *   1. SET on IP node — increments incidentCount, stamps lastIncidentId + lastTechnique
+     *   2. CREATE ATTACKED relationship — one edge per incident with full evidence properties
+     *   3. MERGE USED_TECHNIQUE edges — idempotent link from IP to MITRE AttackTechnique nodes
+     *
+     * "contained" is true only when confidence >= threshold (i.e. the responder was authorized).
+     * Wrapped in try/catch so a Neo4j outage never kills the main pipeline.
+     */
+    private void writeIncidentToGraph(String incidentId, SecurityEvent event, double confidence,
+                                      List<String> mitreIds, long elapsedMs) {
+        String  timestamp  = Instant.now().toString();
+        String  mitreIdStr = String.join(",", mitreIds);
+        boolean contained  = confidence >= confidenceThreshold;
+
+        try {
+            // WRITE 1 — Update the attacker IP node with the latest incident data.
+            graphService.runCypher(
+                "MATCH (ip:IP {address: $sourceIp}) " +
+                "SET ip.lastSeen        = $timestamp, " +
+                "    ip.incidentCount   = coalesce(ip.incidentCount, 0) + 1, " +
+                "    ip.lastIncidentId  = $incidentId, " +
+                "    ip.lastTechnique   = $mitreIds",
+                Map.of(
+                    "sourceIp",   event.getSourceIp(),
+                    "timestamp",  timestamp,
+                    "incidentId", incidentId,
+                    "mitreIds",   mitreIdStr
+                )
+            );
+
+            // WRITE 2 — Create an ATTACKED relationship capturing the full incident context.
+            // One new edge per incident — historical record of every attack attempt.
+            graphService.runCypher(
+                "MATCH (ip:IP {address: $sourceIp}) " +
+                "MATCH (u:User {email: $actor}) " +
+                "CREATE (ip)-[:ATTACKED {" +
+                "    incidentId:    $incidentId, " +
+                "    timestamp:     $timestamp, " +
+                "    technique:     $mitreIds, " +
+                "    confidence:    $confidence, " +
+                "    contained:     $contained, " +
+                "    responseTimeMs: $responseTimeMs" +
+                "}]->(u)",
+                Map.of(
+                    "sourceIp",       event.getSourceIp(),
+                    "actor",          event.getActor(),
+                    "incidentId",     incidentId,
+                    "timestamp",      timestamp,
+                    "mitreIds",       mitreIdStr,
+                    "confidence",     confidence,
+                    "contained",      contained,
+                    "responseTimeMs", elapsedMs
+                )
+            );
+
+            // WRITE 3 — MERGE USED_TECHNIQUE edges from this IP to matched MITRE nodes.
+            // MERGE (not CREATE) so repeated demo runs produce one edge per technique, not N.
+            if (!mitreIds.isEmpty()) {
+                graphService.runCypher(
+                    "MATCH (tech:AttackTechnique) WHERE tech.id IN $mitreIdsList " +
+                    "MATCH (ip:IP {address: $sourceIp}) " +
+                    "MERGE (ip)-[:USED_TECHNIQUE]->(tech)",
+                    Map.of(
+                        "mitreIdsList", mitreIds,
+                        "sourceIp",     event.getSourceIp()
+                    )
+                );
+            }
+
+            log.info("[ORCHESTRATOR] Knowledge graph updated — incidentId={} ip={} techniques={} contained={}",
+                incidentId, event.getSourceIp(), mitreIdStr, contained);
+
+        } catch (Exception e) {
+            log.warn("[ORCHESTRATOR] Could not write to knowledge graph (Neo4j may not be up): {}",
+                e.getMessage());
+        }
     }
 
     private void saveIncident(String incidentId, SecurityEvent event, double confidence,
