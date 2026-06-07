@@ -27,6 +27,10 @@ public class Finding {
     private List<String> mitreNames;
     private String reason;
 
+    // Populated by AnomalyDetectionAgent for the dashboard & orchestrator context
+    private String baselineSummary;
+    private int sessionCount;
+
     // AnomalyDetectionAgent populates this
     private double zScore;
 
@@ -42,6 +46,15 @@ public class Finding {
     private String sourceIp;
     private int hour;
     private int loginLatencyMs;
+
+    private Integer failedAttempts;
+    private Integer filesAccessed;
+    private Integer dataVolumeGB;
+    private String previousLoginCountry;
+    private Integer minutesSincePreviousLogin;
+    private String userAgent;
+    private String action;
+    private String targetUser;
 
     // Populated by LlmStrategy when Groq AI is available — the raw reasoning text
     // returned by the model before it was parsed into techniqueIds/confidence.

@@ -76,7 +76,9 @@ public class WebSocketMessage {
     public static WebSocketMessage incidentClassified(String incidentId, String severity,
                                                        double confidence,
                                                        List<String> mitreIds,
-                                                       List<String> mitreNames) {
+                                                       List<String> mitreNames,
+                                                       String actor,
+                                                       String sourceIp) {
         return WebSocketMessage.builder()
                 .type("INCIDENT_CLASSIFIED")
                 .timestamp(Instant.now().toString())
@@ -85,6 +87,8 @@ public class WebSocketMessage {
                 .confidence(confidence)
                 .mitreIds(mitreIds)
                 .mitreNames(mitreNames)
+                .actor(actor)
+                .sourceIp(sourceIp)
                 .message("Incident classified — confidence " + String.format("%.2f", confidence))
                 .build();
     }
@@ -116,6 +120,38 @@ public class WebSocketMessage {
                 .actionsExecuted(actionsExecuted)
                 .success(true)
                 .message("Incident contained in " + elapsedMs + "ms")
+                .build();
+    }
+
+    /** Sent when a partial confidence score is calculated after an agent finishes. */
+    public static WebSocketMessage confidenceUpdated(String incidentId, double confidence) {
+        return WebSocketMessage.builder()
+                .type("CONFIDENCE_UPDATED")
+                .timestamp(Instant.now().toString())
+                .incidentId(incidentId)
+                .confidence(confidence)
+                .message("Confidence updated to " + String.format("%.2f", confidence))
+                .build();
+    }
+
+    /**
+     * Graph has been updated — new nodes and/or edges added during investigation.
+     * Uses batch newNodes/newEdges arrays so future features (replay, export, undo)
+     * can process changes atomically without reconstructing individual deltas.
+     */
+    public static WebSocketMessage graphUpdated(String incidentId, String action,
+                                                 List<Map<String, Object>> newNodes,
+                                                 List<Map<String, Object>> newEdges) {
+        return WebSocketMessage.builder()
+                .type("GRAPH_UPDATED")
+                .timestamp(Instant.now().toString())
+                .incidentId(incidentId)
+                .message("Graph updated: " + action)
+                .details(Map.of(
+                    "action", action,
+                    "newNodes", newNodes != null ? newNodes : List.of(),
+                    "newEdges", newEdges != null ? newEdges : List.of()
+                ))
                 .build();
     }
 }

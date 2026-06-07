@@ -24,6 +24,13 @@ public class SecurityEvent {
     private String country;
     private int hour;
 
+    private Integer failedAttempts;
+    private Integer filesAccessed;
+    private Integer dataVolumeGB;
+    private String previousLoginCountry;
+    private Integer minutesSincePreviousLogin;
+    private String targetUser;
+
     /**
      * Set by the Orchestrator before dispatching to IncidentResponderAgent.
      * Ensures AuditEntry rows share the same incidentId as the Incident row.

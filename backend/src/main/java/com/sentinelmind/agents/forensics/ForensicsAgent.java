@@ -8,6 +8,8 @@ import com.sentinelmind.audit.IncidentRepository;
 import com.sentinelmind.graph.KnowledgeGraphService;
 import com.sentinelmind.model.Finding;
 import com.sentinelmind.model.SecurityEvent;
+import com.sentinelmind.llm.GroqClient;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -40,13 +42,19 @@ public class ForensicsAgent implements ISecurityAgent {
     private final KnowledgeGraphService  graphService;
     private final IncidentRepository     incidentRepo;
     private final AuditActionRepository  auditRepo;
+    private final GroqClient             groqClient;
+    private final ObjectMapper           objectMapper;
 
     public ForensicsAgent(KnowledgeGraphService graphService,
                           IncidentRepository incidentRepo,
-                          AuditActionRepository auditRepo) {
+                          AuditActionRepository auditRepo,
+                          GroqClient groqClient,
+                          ObjectMapper objectMapper) {
         this.graphService = graphService;
         this.incidentRepo = incidentRepo;
         this.auditRepo    = auditRepo;
+        this.groqClient   = groqClient;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -153,7 +161,69 @@ public class ForensicsAgent implements ISecurityAgent {
                         ? ((List<?>) report.get("attackerConnections")).size() : 0,
                 actions.size());
 
+        // 5. Ask Groq to generate a narrative timeline answering the 5 questions
+        String llmTimeline = askGroqForTimeline(report, incident);
+        if (llmTimeline != null) {
+            try {
+                // Parse the JSON response
+                Map<String, Object> timelineMap = objectMapper.readValue(llmTimeline, Map.class);
+                report.put("forensicsTimeline", timelineMap);
+            } catch (Exception e) {
+                log.error("[FORENSICS] Failed to parse Groq response as JSON: {}", e.getMessage());
+                // Fallback: put raw string
+                report.put("forensicsTimeline", Map.of("narrative", llmTimeline));
+            }
+        } else {
+            // Rule-based fallback if Groq not configured
+            report.put("forensicsTimeline", Map.of(
+                "startTime", incident.getDetectedAt() != null ? incident.getDetectedAt().toString() : "Unknown",
+                "targetAccess", report.get("blastRadius") != null ? ((Map<?, ?>) report.get("blastRadius")).get("summary") : "Unknown",
+                "dwellTime", "Detected instantly by SentinelMind",
+                "unmitigatedImpact", "Attacker could have exfiltrated sensitive data or taken over further accounts.",
+                "blastRadius", report.get("blastRadius") != null ? ((Map<?, ?>) report.get("blastRadius")).get("summary") : "Unknown",
+                "narrative", "Groq AI is not configured. This is a basic rule-based fallback forensics summary."
+            ));
+        }
+
         return report;
+    }
+
+    private String askGroqForTimeline(Map<String, Object> report, Incident incident) {
+        if (!groqClient.isConfigured()) return null;
+
+        String systemPrompt = "You are an elite Cybersecurity Forensics AI.\n" +
+            "You are given a raw incident report (JSON) containing graph connections, audit responses, and attacker details.\n" +
+            "Your task is to analyze this and generate a forensic timeline answering exactly 5 questions.\n" +
+            "You MUST output valid JSON only, with no markdown formatting or extra text.\n\n" +
+            "The JSON structure must be exactly:\n" +
+            "{\n" +
+            "  \"startTime\": \"When did the attack start? (infer from timeline or detectedAt)\",\n" +
+            "  \"targetAccess\": \"What did the attacker try to access?\",\n" +
+            "  \"dwellTime\": \"How long were they in the system before detection? (SentinelMind usually detects in ms)\",\n" +
+            "  \"unmitigatedImpact\": \"What would have happened if we hadn't caught them?\",\n" +
+            "  \"blastRadius\": \"What was the blast radius?\",\n" +
+            "  \"narrative\": \"A 2-3 sentence executive summary of the entire incident.\"\n" +
+            "}";
+
+        try {
+            String reportJson = objectMapper.writeValueAsString(report);
+            String response = groqClient.chat(systemPrompt, "Incident Report:\n" + reportJson);
+
+            // Clean up if Groq wraps in markdown
+            if (response.startsWith("```json")) {
+                response = response.substring(7);
+            } else if (response.startsWith("```")) {
+                response = response.substring(3);
+            }
+            if (response.endsWith("```")) {
+                response = response.substring(0, response.length() - 3);
+            }
+
+            return response.trim();
+        } catch (Exception e) {
+            log.error("[FORENSICS] askGroqForTimeline failed: {}", e.getMessage());
+            return null;
+        }
     }
 
     private String parseSourceIp(String eventJson) {

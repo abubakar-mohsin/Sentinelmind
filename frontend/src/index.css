@@ -1276,6 +1276,54 @@ img { display: block; max-width: 100%; }
   to   { transform: rotate(360deg); }
 }
 
+/* ══════════════════════════════════════════════════
+   THREAT GRAPH
+   ══════════════════════════════════════════════════ */
+
+/* Node appearance animation */
+@keyframes graph-node-enter {
+  0%   { opacity: 0; transform: scale(0.3); }
+  60%  { transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.graph-node {
+  cursor: grab;
+  transition: filter 0.3s ease;
+}
+
+.graph-node:active {
+  cursor: grabbing;
+}
+
+.graph-node:hover {
+  filter: brightness(1.3) !important;
+}
+
+/* Attack pulse on IP nodes during incident */
+@keyframes graph-pulse-red {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(239,68,68,0.3)); }
+  50%      { filter: drop-shadow(0 0 12px rgba(239,68,68,0.8)); }
+}
+
+/* Contained glow on incident nodes */
+@keyframes graph-pulse-green {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(34,197,94,0.2)); }
+  50%      { filter: drop-shadow(0 0 8px rgba(34,197,94,0.5)); }
+}
+
+/* Reasoning cursor blink */
+.reasoning-cursor {
+  animation: blink-cursor 0.7s steps(1) infinite;
+  color: var(--brand);
+  font-weight: 300;
+}
+
+@keyframes blink-cursor {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
 /* ── prefers-reduced-motion ── */
 
 @media (prefers-reduced-motion: reduce) {

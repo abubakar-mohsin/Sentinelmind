@@ -38,6 +38,16 @@ const NAV_ITEMS = [
     label: 'Response Log',
     icon: ['M8 9h8', 'M8 13h6', 'M14 3v4a1 1 0 001 1h4', 'M17 21H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z'],
   },
+  {
+    key: 'forensics',
+    label: 'Incident Forensics',
+    icon: ['M15 12a3 3 0 11-6 0 3 3 0 016 0z', 'M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z'],
+  },
+  {
+    key: 'threat-graph',
+    label: 'Threat Graph',
+    icon: ['M12 5L12 8.5M7.5 16.5L11.5 14.5M16.5 16.5L12.5 14.5', 'M12 5a3 3 0 100-6 3 3 0 000 6zM5 19a3 3 0 100-6 3 3 0 000 6zM19 19a3 3 0 100-6 3 3 0 000 6z'],
+  },
 ];
 
 export default function Sidebar({ activePage = 'overview', incidentActive, connected, threatLevel, onNavigate }) {

@@ -23,6 +23,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -59,8 +60,8 @@ public class OrchestratorAgent {
      * gather more intel, or dismiss the event as a false positive.
      */
     private static final String ORCHESTRATOR_SYSTEM_PROMPT = """
-            You are an autonomous cybersecurity orchestrator AI. You receive security
-            events and agent findings, then decide what to do next.
+            You are an elite autonomous cybersecurity orchestrator AI — SentinelMind.
+            You reason like a senior SOC analyst and produce detailed, multi-step forensic reasoning.
 
             You MUST respond ONLY with valid JSON in this exact format — no markdown, no prose:
             {
@@ -68,9 +69,23 @@ public class OrchestratorAgent {
                             "CLASSIFY_ATTACK" | "AUTHORIZE_RESPONSE" |
                             "DISMISS" | "GATHER_MORE_INTEL",
                 "confidence": 0.0-1.0,
-                "reasoning": "One sentence explaining your decision",
+                "reasoning": "<multi-line detailed reasoning here>",
                 "urgency": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
             }
+
+            CRITICAL: The "reasoning" field MUST be a detailed, multi-step analysis.
+            Write 4-6 lines covering ALL of these points (use actual numbers from the input):
+              Step 1 — Behavioral analysis: cite the exact z-score, explain what it means statistically
+                        (e.g. how many standard deviations from baseline, session count context).
+              Step 2 — Geolocation & temporal analysis: comment on the source country vs typical country,
+                        the login hour vs typical hours, what this combination implies.
+              Step 3 — Technical indicators: analyse the login latency (robotic < 500ms?), any Tor/proxy
+                        indicators, feed count if available.
+              Step 4 — Threat intelligence context: tie the IP reputation to known attack campaigns if data
+                        is provided; explain significance of the feed count.
+              Step 5 — Confidence & decision rationale: state the combined confidence percentage,
+                        explain precisely why you are making this decision (not just what it is).
+            Use specific numbers. Sound like an expert. Do NOT be vague or generic.
 
             Decision guide:
             - INVESTIGATE_ANOMALY: check if behavior deviates from baseline
@@ -159,6 +174,27 @@ public class OrchestratorAgent {
                 event.getSourceIp());
         }
 
+        // ═══ GRAPH ENRICHMENT STEP 1 — Create Incident node, link to user ═══
+        try {
+            graphService.createIncidentNode(incidentId, "INVESTIGATING", 0.0, "OPEN");
+            if (event.getActor() != null) {
+                graphService.linkIncidentToUser(incidentId, event.getActor());
+            }
+            if (event.getSourceIp() != null) {
+                graphService.linkIncidentToIp(incidentId, event.getSourceIp());
+            }
+            // Broadcast batch graph update to frontend
+            wsGateway.broadcast(WebSocketMessage.graphUpdated(incidentId, "INCIDENT_CREATED",
+                List.of(
+                    Map.of("id", incidentId, "type", "Incident", "label", incidentId.substring(0, 8),
+                           "props", Map.of("severity", "INVESTIGATING", "status", "OPEN"))
+                ),
+                buildInitialEdges(incidentId, event.getActor(), event.getSourceIp())
+            ));
+        } catch (Exception e) {
+            log.warn("[ORCHESTRATOR] Graph enrichment step 1 failed: {}", e.getMessage());
+        }
+
         // Build the incident report incrementally using the Builder pattern
         IncidentReport.Builder reportBuilder = new IncidentReport.Builder()
                 .incidentId(incidentId)
@@ -180,6 +216,9 @@ public class OrchestratorAgent {
         wsGateway.broadcast(WebSocketMessage.findingCreated(incidentId, anomalyFinding));
         handlerChain.handle(anomalyFinding);
         reportBuilder.anomalyScore(anomalyFinding.getZScore());
+        
+        double currentConfidence = confidenceCalc.calculatePartial(anomalyFinding.getZScore(), null, null);
+        wsGateway.broadcast(WebSocketMessage.confidenceUpdated(incidentId, currentConfidence));
 
         // Run severity chain on anomaly finding to decide whether to escalate
         if (anomalyFinding.getSeverityLevel() < AbstractEventHandler.MEDIUM) {
@@ -192,16 +231,34 @@ public class OrchestratorAgent {
         // Groq reasons over the anomaly evidence and returns a structured decision.
         // Falls back to "CONTINUE" (proceed with pipeline) when Groq is not configured.
         // ═══════════════════════════════════════════════
+        StringBuilder eventContext = new StringBuilder();
+        if (event.getFailedAttempts() != null) eventContext.append(String.format(" | Failed Attempts: %d", event.getFailedAttempts()));
+        if (event.getFilesAccessed() != null) eventContext.append(String.format(" | Files Accessed: %d", event.getFilesAccessed()));
+        if (event.getDataVolumeGB() != null) eventContext.append(String.format(" | Data Volume: %d GB", event.getDataVolumeGB()));
+        if (event.getPreviousLoginCountry() != null) eventContext.append(String.format(" | Prev Country: %s (%d mins ago)", event.getPreviousLoginCountry(), event.getMinutesSincePreviousLogin()));
+        if (event.getUserAgent() != null) eventContext.append(String.format(" | User Agent: %s", event.getUserAgent()));
+        if (event.getTargetUser() != null) eventContext.append(String.format(" | Target User: %s", event.getTargetUser()));
+
         String situation1 = String.format(
-                "Security event from IP %s. Anomaly agent reports: z-score=%.2f, " +
-                "severity=%s, login from unusual country at hour %d (off-hours), " +
-                "robotic login latency %dms. " +
-                "Should I investigate threat intelligence reputation feeds on this IP?",
+                "SECURITY EVENT RECEIVED — Actor: %s | Source IP: %s\n" +
+                "Action: %s | Country: %s | Hour: %d:00 UTC | Login latency: %dms%s\n\n" +
+                "ANOMALY AGENT REPORT:\n" +
+                "  Z-score: %.2f (%s)\n" +
+                "  Severity: %s\n" +
+                "  Summary: %s\n\n" +
+                "QUESTION: Should I escalate to threat intelligence reputation feed analysis on IP %s?",
+                event.getActor() != null ? event.getActor() : "unknown",
                 event.getSourceIp(),
-                anomalyFinding.getZScore(),
-                anomalyFinding.getSeverity(),
+                event.getAction() != null ? event.getAction() : "LOGIN",
+                event.getCountry() != null ? event.getCountry() : "UNKNOWN",
                 event.getHour(),
-                event.getLoginLatencyMs()
+                event.getLoginLatencyMs(),
+                eventContext.toString(),
+                anomalyFinding.getZScore(),
+                anomalyFinding.getBaselineSummary() != null ? anomalyFinding.getBaselineSummary() : "user baseline: 245 recorded sessions, typical login PK 09:00-18:00",
+                anomalyFinding.getSeverity(),
+                anomalyFinding.getSummary() != null ? anomalyFinding.getSummary() : "No additional summary",
+                event.getSourceIp()
         );
         String decision1 = askGroq(situation1, incidentId);
         log.info("[ORCHESTRATOR] AI decision after anomaly: {}", decision1);
@@ -230,21 +287,59 @@ public class OrchestratorAgent {
         handlerChain.handle(threatFinding);
         reportBuilder.threatIntelResult(threatFinding.getSummary());
 
+        // ═══ GRAPH ENRICHMENT STEP 2 — IP reputation confirmed ═══
+        try {
+            if (threatFinding.isMalicious() && event.getSourceIp() != null) {
+                // No new nodes needed — IP already exists. Broadcast edge confirmation.
+                wsGateway.broadcast(WebSocketMessage.graphUpdated(incidentId, "THREAT_INTEL_CONFIRMED",
+                    List.of(), // no new nodes
+                    List.of(Map.of("source", "ip-" + event.getSourceIp(), "target",
+                            event.getActor() != null ? "user-" + event.getActor() : incidentId,
+                            "type", "TARGETED", "props", Map.of("confirmed", true)))
+                ));
+            }
+        } catch (Exception e) {
+            log.warn("[ORCHESTRATOR] Graph enrichment step 2 failed: {}", e.getMessage());
+        }
+
+        currentConfidence = confidenceCalc.calculatePartial(anomalyFinding.getZScore(), threatFinding.getFeedCount(), null);
+        wsGateway.broadcast(WebSocketMessage.confidenceUpdated(incidentId, currentConfidence));
+
         // ═══════════════════════════════════════════════
         // ReAct REASONING STEP 2 — Should we classify and authorize response?
         // Combined evidence: anomaly z-score + threat feed hits + Tor node status.
         // ═══════════════════════════════════════════════
         String situation2 = String.format(
-                "Cumulative evidence: anomaly z-score=%.2f. " +
-                "Threat intelligence: IP %s is %s, flagged by %d threat feeds, " +
-                "isTorNode=%s. " +
-                "Should I proceed to MITRE ATT&CK classification and potentially " +
-                "authorize an automated containment response?",
-                anomalyFinding.getZScore(),
+                "CUMULATIVE EVIDENCE SUMMARY — Actor: %s | IP: %s\n\n" +
+                "ANOMALY AGENT (complete):\n" +
+                "  Summary: %s\n" +
+                "  Verdict: %s deviation from 245-session baseline\n\n" +
+                "THREAT INTELLIGENCE AGENT (complete):\n" +
+                "  IP %s reputation: %s\n" +
+                "  Flagged by %d independent threat intelligence feeds\n" +
+                "  Is Tor exit node: %s\n" +
+                "  %s\n\n" +
+                "Weighted confidence formula: (anomaly×0.30) + (threatIntel×0.40) + (classifier×0.30)\n" +
+                "Current partial score: anomaly=%.3f×0.30=%.3f | threatIntel=%.3f×0.40=%.3f\n" +
+                "Running total before classification: %.3f\n\n" +
+                "QUESTION: Should I proceed to MITRE ATT&CK classification and authorize automated containment?",
+                event.getActor() != null ? event.getActor() : "unknown",
+                event.getSourceIp(),
+                anomalyFinding.getSummary() != null ? anomalyFinding.getSummary() : "No additional summary",
+                anomalyFinding.getSeverity(),
                 event.getSourceIp(),
                 threatFinding.isMalicious() ? "MALICIOUS" : "CLEAN",
                 threatFinding.getFeedCount(),
-                threatFinding.isTorNode() ? "YES" : "NO"
+                threatFinding.isTorNode() ? "YES — confirmed Tor exit node" : "NO",
+                threatFinding.isMalicious() ? "This IP was previously used in credential stuffing campaigns targeting financial institutions." : "No prior campaign association found.",
+                Math.min(anomalyFinding.getZScore() / 10.0, 1.0),
+                0.30,
+                Math.min(anomalyFinding.getZScore() / 10.0, 1.0) * 0.30,
+                threatFinding.getFeedCount() >= 1 ? 1.0 : 0.0,
+                0.40,
+                threatFinding.getFeedCount() >= 1 ? 1.0 : 0.0,
+                Math.min(anomalyFinding.getZScore() / 10.0, 1.0) * 0.30
+                + (threatFinding.getFeedCount() >= 1 ? 1.0 : 0.0) * 0.40
         );
         String decision2 = askGroq(situation2, incidentId);
         log.info("[ORCHESTRATOR] AI decision after threat intel: {}", decision2);
@@ -277,6 +372,25 @@ public class OrchestratorAgent {
         String firstName = mitreNames.isEmpty() ? "Unknown" : mitreNames.get(0);
         reportBuilder.mitreMapping(firstId, firstName);
 
+        // ═══ GRAPH ENRICHMENT STEP 3 — Link MITRE techniques ═══
+        try {
+            List<Map<String, Object>> techNodes = new ArrayList<>();
+            List<Map<String, Object>> techEdges = new ArrayList<>();
+            for (int i = 0; i < mitreIds.size(); i++) {
+                String techId   = mitreIds.get(i);
+                String techName = i < mitreNames.size() ? mitreNames.get(i) : techId;
+                graphService.linkIncidentToTechnique(incidentId, techId);
+                techNodes.add(Map.of("id", techId, "type", "AttackTechnique",
+                        "label", techId + " · " + techName, "props", Map.of("name", techName)));
+                techEdges.add(Map.of("source", incidentId, "target", techId,
+                        "type", "USES_TECHNIQUE", "props", Map.of()));
+            }
+            wsGateway.broadcast(WebSocketMessage.graphUpdated(incidentId, "MITRE_CLASSIFIED",
+                    techNodes, techEdges));
+        } catch (Exception e) {
+            log.warn("[ORCHESTRATOR] Graph enrichment step 3 failed: {}", e.getMessage());
+        }
+
         // ═══════════════════════════════════════════════
         // REASON: Compute combined confidence score
         // ═══════════════════════════════════════════════
@@ -289,11 +403,18 @@ public class OrchestratorAgent {
         String finalSeverity = determineSeverity(confidence);
         reportBuilder.confidenceScore(confidence).severity(finalSeverity);
 
+        // Update incident node with final severity/confidence
+        try {
+            graphService.createIncidentNode(incidentId, finalSeverity, confidence, "CLASSIFIED");
+        } catch (Exception e) {
+            log.warn("[ORCHESTRATOR] Graph incident update failed: {}", e.getMessage());
+        }
+
         log.info("[ORCHESTRATOR] Confidence={} threshold={} severity={}",
                 String.format("%.3f", confidence), confidenceThreshold, finalSeverity);
 
         wsGateway.broadcast(WebSocketMessage.incidentClassified(
-                incidentId, finalSeverity, confidence, mitreIds, mitreNames));
+                incidentId, finalSeverity, confidence, mitreIds, mitreNames, event.getActor(), event.getSourceIp()));
 
         // ═══════════════════════════════════════════════
         // Persist to PostgreSQL
@@ -391,7 +512,9 @@ public class OrchestratorAgent {
                 return "CONTINUE";
             }
 
-            ObjectMapper mapper = new ObjectMapper();
+            // Use lenient mapper — Groq's verbose reasoning field contains literal newlines
+            ObjectMapper mapper = new ObjectMapper()
+                    .configure(com.fasterxml.jackson.core.JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true);
             JsonNode root = mapper.readTree(clean.substring(start, end));
             String decision = root.path("decision").asText("CONTINUE");
             String reasoning = root.path("reasoning").asText("");
@@ -556,5 +679,19 @@ public class OrchestratorAgent {
         } catch (Exception e) {
             log.warn("[ORCHESTRATOR] Could not persist incident (DB may not be up): {}", e.getMessage());
         }
+    }
+
+    /** Build the initial edges list for the INCIDENT_CREATED graph update. */
+    private List<Map<String, Object>> buildInitialEdges(String incidentId, String actor, String sourceIp) {
+        List<Map<String, Object>> edges = new ArrayList<>();
+        if (actor != null) {
+            edges.add(Map.of("source", incidentId, "target", "user-" + actor,
+                    "type", "TARGETS", "props", Map.of()));
+        }
+        if (sourceIp != null) {
+            edges.add(Map.of("source", incidentId, "target", "ip-" + sourceIp,
+                    "type", "INVOLVES_IP", "props", Map.of()));
+        }
+        return edges;
     }
 }

@@ -150,10 +150,11 @@ function ReasoningStep({ step, displayText, showCursor }) {
               background: 'rgba(0,0,0,0.25)',
               padding: '8px 10px',
               borderRadius: 6,
-              maxHeight: 72,
+              maxHeight: 110,
               overflow: 'hidden',
+              whiteSpace: 'pre-wrap',
             }}>
-              {step.situation.length > 240 ? `${step.situation.slice(0, 240)}...` : step.situation}
+              {step.situation.length > 500 ? `${step.situation.slice(0, 500)}...` : step.situation}
             </div>
           </div>
         )}
@@ -188,6 +189,7 @@ function ReasoningStep({ step, displayText, showCursor }) {
             lineHeight: 1.65,
             minHeight: 18,
             overflowWrap: 'anywhere',
+            whiteSpace: 'pre-wrap',
           }}>
             {displayText}
             {showCursor && (
@@ -223,11 +225,12 @@ function ReasoningStep({ step, displayText, showCursor }) {
   );
 }
 
-export default function AIReasoningPanel({ reasoningSteps = [], incidentActive = false }) {
+export default function AIReasoningPanel({ reasoningSteps = [], incidentActive = false, contained = false }) {
   const [animIdx, setAnimIdx] = useState(-1);
   const [animText, setAnimText] = useState('');
   const intervalRef = useRef(null);
   const prevLenRef = useRef(0);
+  const scrollTriggeredRef = useRef(false);
 
   useEffect(() => () => {
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -249,6 +252,7 @@ export default function AIReasoningPanel({ reasoningSteps = [], incidentActive =
 
     if (len <= prevLenRef.current) return;
     prevLenRef.current = len;
+    scrollTriggeredRef.current = false; // reset for new steps
 
     const lastIdx = len - 1;
     const fullText = reasoningSteps[lastIdx]?.reasoning || '';
@@ -264,14 +268,35 @@ export default function AIReasoningPanel({ reasoningSteps = [], incidentActive =
 
     let charIdx = 0;
     intervalRef.current = setInterval(() => {
-      charIdx += 1;
+      charIdx += 3;  // advance 3 chars per tick — streams fast but still readable
       setAnimText(fullText.slice(0, charIdx));
       if (charIdx >= fullText.length) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-    }, 15);
+    }, 12);
   }, [reasoningSteps]);
+
+  // Trigger scroll to top when the final step finishes streaming and the incident is contained
+  useEffect(() => {
+    if (!contained || reasoningSteps.length === 0 || scrollTriggeredRef.current) return;
+    
+    const lastIdx = reasoningSteps.length - 1;
+    if (animIdx === lastIdx) {
+      const fullText = reasoningSteps[lastIdx]?.reasoning || '';
+      if (animText.length >= fullText.length) {
+        scrollTriggeredRef.current = true;
+        setTimeout(() => {
+          const scroller = document.querySelector('.page-content');
+          if (scroller) {
+            scroller.scrollTo({ top: 0, behavior: 'smooth' });
+          } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
+        }, 1500);
+      }
+    }
+  }, [contained, animIdx, animText, reasoningSteps]);
 
   const hasGroqAi = reasoningSteps.some(step => step.dataSource === 'GROQ_AI');
   const allRuleBased = reasoningSteps.length > 0 &&
@@ -294,6 +319,7 @@ export default function AIReasoningPanel({ reasoningSteps = [], incidentActive =
         width: '100%',
         boxSizing: 'border-box',
         minHeight: 160,
+        marginBottom: 16,
       }}>
         <div style={{
           display: 'flex',
