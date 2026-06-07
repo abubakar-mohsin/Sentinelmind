@@ -3,6 +3,7 @@ package com.sentinelmind.agents.responder;
 import com.sentinelmind.agents.ISecurityAgent;
 import com.sentinelmind.audit.AuditActionRepository;
 import com.sentinelmind.audit.AuditEntry;
+import com.sentinelmind.graph.KnowledgeGraphService;
 import com.sentinelmind.messaging.EventProducer;
 import com.sentinelmind.messaging.KafkaTopics;
 import com.sentinelmind.model.Finding;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -35,11 +37,14 @@ public class IncidentResponderAgent implements ISecurityAgent {
 
     private final AuditActionRepository auditRepo;
     private final EventProducer         eventProducer;
+    private final KnowledgeGraphService graphService;
 
     public IncidentResponderAgent(AuditActionRepository auditRepo,
-                                  EventProducer eventProducer) {
-        this.auditRepo    = auditRepo;
-        this.eventProducer = eventProducer;
+                                  EventProducer eventProducer,
+                                  KnowledgeGraphService graphService) {
+        this.auditRepo      = auditRepo;
+        this.eventProducer  = eventProducer;
+        this.graphService   = graphService;
     }
 
     @Override
@@ -98,6 +103,22 @@ public class IncidentResponderAgent implements ISecurityAgent {
         }
 
         long elapsedMs = System.currentTimeMillis() - startMs;
+
+        // ═══ GRAPH ENRICHMENT STEP 4 — Mark IP blocked, incident contained ═══
+        try {
+            if (event.getSourceIp() != null) {
+                graphService.markIpBlocked(event.getSourceIp());
+            }
+            graphService.markIncidentContained(incidentId);
+            eventProducer.publishResponse(WebSocketMessage.graphUpdated(
+                incidentId, "INCIDENT_CONTAINED",
+                List.of(), // no new nodes
+                List.of(Map.of("source", "ip-" + event.getSourceIp(), "target", incidentId,
+                        "type", "BLOCKED", "props", Map.of("blocked", true)))
+            ));
+        } catch (Exception e) {
+            // Non-fatal — graph enrichment is best-effort
+        }
 
         // Broadcast final containment message
         WebSocketMessage contained = WebSocketMessage.incidentContained(

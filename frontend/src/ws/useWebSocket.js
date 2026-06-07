@@ -17,17 +17,25 @@ const MAX_MESSAGES = 100;
  * - lastMessage drives App.jsx state updates via a single useEffect.
  * - messages array is prepend-ordered (newest first), capped at MAX_MESSAGES.
  */
-export function useWebSocket() {
+export function useWebSocket(onEvent) {
   const clientRef  = useRef(null);
+  const onEventRef = useRef(onEvent);
   const [connected,    setConnected]   = useState(false);
   const [messages,     setMessages]    = useState([]);
   const [lastMessage,  setLastMessage] = useState(null);
+
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
 
   const onMessage = useCallback((frame) => {
     try {
       const msg = JSON.parse(frame.body);
       setLastMessage(msg);
       setMessages(prev => [msg, ...prev].slice(0, MAX_MESSAGES));
+      if (onEventRef.current) {
+        onEventRef.current(msg);
+      }
     } catch (e) {
       console.error('[WS] Failed to parse message:', e);
     }

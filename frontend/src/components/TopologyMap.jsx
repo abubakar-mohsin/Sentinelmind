@@ -4,9 +4,9 @@ import * as d3 from 'd3';
 /* ── Data ───────────────────────────────────────── */
 
 const RAW_NODES = [
-  { id: 'attacker', label: '185.220.101.47',        sublabel: 'Tor Exit Node',   type: 'ip'      },
-  { id: 'user',     label: 'ahmed@targetcorp.com',  sublabel: 'Finance · PK',    type: 'user'    },
-  { id: 'service',  label: 'AuthService',           sublabel: 'Criticality: High', type: 'service' },
+  { id: 'attacker', label: '185.220.101.47',        sublabel: 'Tor Exit Node',   type: 'ip',      targetX: 150, targetY: 60  },
+  { id: 'user',     label: 'ahmed@targetcorp.com',  sublabel: 'Finance · PK',    type: 'user',    targetX: 75,  targetY: 165 },
+  { id: 'service',  label: 'AuthService',           sublabel: 'Criticality: High', type: 'service', targetX: 225, targetY: 165 },
 ];
 
 const RAW_LINKS = [
@@ -37,19 +37,27 @@ export default function TopologyMap({ attackActive, contained }) {
     const W = 300, H = 230;
     const svg = d3.select(svgRef.current);
 
-    const nodes = RAW_NODES.map(d => ({ ...d }));
+    const nodes = RAW_NODES.map(d => ({ ...d, x: W/2, y: 110 }));
     const links = RAW_LINKS.map(d => ({ ...d }));
 
     const sim = d3.forceSimulation(nodes)
       .force('link',    d3.forceLink(links).id(d => d.id).distance(110))
       .force('charge',  d3.forceManyBody().strength(-200))
-      .force('center',  d3.forceCenter(W / 2, H / 2))
+      .force('x',       d3.forceX(d => d.targetX).strength(0.12))
+      .force('y',       d3.forceY(d => d.targetY).strength(0.12))
       .force('collide', d3.forceCollide(38));
 
     const linkSel = svg.append('g').selectAll('line').data(links).join('line')
       .attr('class', 'topo-link')
       .attr('stroke', 'rgba(255,255,255,0.07)')
       .attr('stroke-width', 1);
+
+    const linkLabelStrokeSel = svg.append('g').selectAll('text').data(links).join('text')
+      .attr('text-anchor', 'middle')
+      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-size', '9')
+      .attr('stroke', '#18181B').attr('stroke-width', 4).attr('stroke-linejoin', 'round')
+      .text(d => d.label);
 
     const linkLabelSel = svg.append('g').selectAll('text').data(links).join('text')
       .attr('text-anchor', 'middle')
@@ -96,6 +104,20 @@ export default function TopologyMap({ attackActive, contained }) {
     labelSel.append('text')
       .attr('text-anchor', 'middle')
       .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-size', '9.5').attr('dy', '26')
+      .attr('stroke', '#18181B').attr('stroke-width', 4).attr('stroke-linejoin', 'round')
+      .text(d => d.label.length > 22 ? d.label.slice(0, 21) + '…' : d.label);
+
+    labelSel.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-size', '8.5').attr('dy', '38')
+      .attr('stroke', '#18181B').attr('stroke-width', 4).attr('stroke-linejoin', 'round')
+      .text(d => d.sublabel);
+
+    labelSel.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
       .attr('font-size', '9.5').attr('fill', '#A1A1AA').attr('dy', '26')
       .text(d => d.label.length > 22 ? d.label.slice(0, 21) + '…' : d.label);
 
@@ -109,6 +131,9 @@ export default function TopologyMap({ attackActive, contained }) {
       linkSel
         .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
         .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      linkLabelStrokeSel
+        .attr('x', d => (d.source.x + d.target.x) / 2)
+        .attr('y', d => (d.source.y + d.target.y) / 2 - 5);
       linkLabelSel
         .attr('x', d => (d.source.x + d.target.x) / 2)
         .attr('y', d => (d.source.y + d.target.y) / 2 - 5);

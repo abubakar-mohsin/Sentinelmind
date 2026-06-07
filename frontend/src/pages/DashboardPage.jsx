@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useWebSocket }    from '../ws/useWebSocket';
 import Sidebar             from '../components/layout/Sidebar';
 import DashboardHeader     from '../components/layout/DashboardHeader';
 import AgentPipeline       from '../components/AgentPipeline';
 import AIReasoningPanel    from '../components/AIReasoningPanel';
+import ForensicsTimeline   from '../components/ForensicsTimeline';
+import ThreatGraph         from '../components/ThreatGraph';
+import GraphInsights       from '../components/GraphInsights';
 import ThreatMatrix        from '../components/ThreatMatrix';
 import ResponseLog         from '../components/ResponseLog';
 import AlertQueue          from '../components/AlertQueue';
@@ -42,7 +45,6 @@ function StatCard({ label, value, unit = '', sub, color }) {
 /* ── DashboardPage ──────────────────────────────── */
 
 export default function DashboardPage() {
-  const { connected, lastMessage } = useWebSocket();
   const [activePage,     setActivePage]     = useState('overview');
   const [incidentActive, setIncidentActive] = useState(false);
   const [currentId,      setCurrentId]      = useState(null);
@@ -54,17 +56,36 @@ export default function DashboardPage() {
   const [incidents,      setIncidents]      = useState([]);
   const [metrics,        setMetrics]        = useState(INITIAL_METRICS);
   const [reasoningSteps, setReasoningSteps] = useState([]);
+  const [baseline,       setBaseline]       = useState(null);
+  const [currentActor,   setCurrentActor]   = useState('ahmed@targetcorp.com');
+  const [graphEvents,    setGraphEvents]    = useState([]);
 
   const currentIdRef    = useRef(null);
   const activatedAtRef  = useRef(null);
   const classifiedAtRef = useRef(null);
 
+  /* ── Baseline fetcher ── */
+  useEffect(() => {
+    async function fetchBaseline() {
+      try {
+        const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+        const headers = new Headers();
+        headers.set('Authorization', 'Basic ' + btoa('admin:sentinelmind'));
+        const res = await fetch(`${API_BASE}/api/baseline/${currentActor}`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setBaseline(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch baseline:', err);
+      }
+    }
+    fetchBaseline();
+  }, [currentActor, contained]); // Re-fetch when contained (attack finishes) so we see updates if it was normal
+
   /* ── Message processor ── */
 
-  useEffect(() => {
-    if (!lastMessage) return;
-    const msg = lastMessage;
-
+  const handleMessage = useCallback((msg) => {
     if (msg.incidentId && msg.incidentId !== currentIdRef.current) {
       currentIdRef.current    = msg.incidentId;
       activatedAtRef.current  = Date.now();
@@ -112,7 +133,19 @@ export default function DashboardPage() {
         });
         break;
 
+      case 'CONFIDENCE_UPDATED':
+        setMetrics(prev => ({
+          ...prev,
+          confidence: msg.confidence,
+        }));
+        break;
+
       case 'INCIDENT_CLASSIFIED':
+        if (msg.actor) {
+          setCurrentActor(msg.actor);
+        } else if (msg.triggeringEvent && msg.triggeringEvent.actor) {
+          setCurrentActor(msg.triggeringEvent.actor);
+        }
         classifiedAtRef.current = Date.now();
         setClassifiedData(msg);
         setThreatLevel(msg.severity === 'CRITICAL' ? 'CRITICAL' : 'ELEVATED');
@@ -149,9 +182,15 @@ export default function DashboardPage() {
         }));
         break;
 
+      case 'GRAPH_UPDATED':
+        setGraphEvents(prev => [...prev, msg]);
+        break;
+
       default: break;
     }
-  }, [lastMessage]);
+  }, []);
+
+  const { connected } = useWebSocket(handleMessage);
 
   /* ── Helpers ── */
 
@@ -164,7 +203,6 @@ export default function DashboardPage() {
 
   return (
     <div className="app-shell">
-
       <Sidebar
         activePage={activePage}
         incidentActive={incidentActive}
@@ -174,59 +212,84 @@ export default function DashboardPage() {
       />
 
       <div className="main-content">
-
         <DashboardHeader
           activePage={activePage}
           incidentActive={incidentActive}
         />
 
         <div className="page-content">
+          {baseline && (
+            <div style={{ padding: '12px 20px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+              <span style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                <strong>User Baseline ({currentActor}):</strong> {baseline.sessionCount} sessions analyzed. Typical login: {baseline.typicalCountry}, {String(Math.max(0, Math.floor(baseline.avgLoginHour - 1))).padStart(2, '0')}:00-{String(Math.min(23, Math.floor(baseline.avgLoginHour + 8))).padStart(2, '0')}:00, avg latency {(baseline.avgLatencyMs / 1000).toFixed(1)}s.
+              </span>
+            </div>
+          )}
+          {activePage === 'forensics' ? (
+            <ForensicsTimeline incidentId={currentId} />
+          ) : activePage === 'threat-graph' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <ThreatGraph
+                graphEvents={graphEvents}
+                incidentId={currentId}
+                incidentActive={incidentActive}
+                contained={contained}
+                currentActor={currentActor}
+              />
+              <GraphInsights
+                graphNodes={[]}
+                graphEdges={[]}
+              />
+            </div>
+          ) : (
+            <>
+              {/* Stats row */}
+              <div className="stats-row">
+                <StatCard
+                  label="Active Threats"
+                  value={incidentActive ? 1 : contained ? 0 : null}
+                  color={incidentActive ? 'var(--danger)' : contained ? 'var(--success)' : undefined}
+                  sub={incidentActive ? 'Investigating…' : contained ? 'Contained' : 'No active threats'}
+                />
+                <StatCard
+                  label="Detection Time"
+                  value={metrics.detectionMs != null ? (metrics.detectionMs / 1000).toFixed(1) : null}
+                  unit="s"
+                  color={metrics.detectionMs != null ? 'var(--info)' : undefined}
+                  sub="From event to classification"
+                />
+                <StatCard
+                  label="AI Confidence"
+                  value={metrics.confidence != null ? (metrics.confidence * 100).toFixed(1) : null}
+                  unit="%"
+                  color={metrics.confidence >= 0.92 ? 'var(--success)' : metrics.confidence != null ? 'var(--warning)' : undefined}
+                  sub="Threshold: 92%"
+                />
+                <StatCard
+                  label="Actions Taken"
+                  value={metrics.actionsExecuted}
+                  color={metrics.actionsExecuted > 0 ? 'var(--warning)' : undefined}
+                  sub="Automated responses"
+                />
+              </div>
 
-          {/* Stats row */}
-          <div className="stats-row">
-            <StatCard
-              label="Active Threats"
-              value={incidentActive ? 1 : contained ? 0 : null}
-              color={incidentActive ? 'var(--danger)' : contained ? 'var(--success)' : undefined}
-              sub={incidentActive ? 'Investigating…' : contained ? 'Contained' : 'No active threats'}
-            />
-            <StatCard
-              label="Detection Time"
-              value={metrics.detectionMs != null ? (metrics.detectionMs / 1000).toFixed(1) : null}
-              unit="s"
-              color={metrics.detectionMs != null ? 'var(--info)' : undefined}
-              sub="From event to classification"
-            />
-            <StatCard
-              label="AI Confidence"
-              value={metrics.confidence != null ? (metrics.confidence * 100).toFixed(1) : null}
-              unit="%"
-              color={metrics.confidence >= 0.92 ? 'var(--success)' : metrics.confidence != null ? 'var(--warning)' : undefined}
-              sub="Threshold: 92%"
-            />
-            <StatCard
-              label="Actions Taken"
-              value={metrics.actionsExecuted}
-              color={metrics.actionsExecuted > 0 ? 'var(--warning)' : undefined}
-              sub="Automated responses"
-            />
-          </div>
+              {/* Main grid: pipeline + threat matrix */}
+              <div className="dashboard-main">
+                <AgentPipeline agentStates={agentStates} />
+                <ThreatMatrix  classifiedData={classifiedData} />
+              </div>
 
-          {/* Main grid: pipeline + threat matrix */}
-          <div className="dashboard-main">
-            <AgentPipeline agentStates={agentStates} />
-            <ThreatMatrix  classifiedData={classifiedData} />
-          </div>
+              <AIReasoningPanel reasoningSteps={reasoningSteps} incidentActive={incidentActive} contained={contained} />
 
-          <AIReasoningPanel reasoningSteps={reasoningSteps} incidentActive={incidentActive} />
-
-          {/* Bottom grid: alerts + response log + topology */}
-          <div className="dashboard-bottom">
-            <AlertQueue  incidents={incidents} />
-            <ResponseLog responses={responses} />
-            <TopologyMap attackActive={incidentActive} contained={contained} />
-          </div>
-
+              {/* Bottom grid: alerts + response log + topology */}
+              <div className="dashboard-bottom">
+                <AlertQueue  incidents={incidents} />
+                <ResponseLog responses={responses} />
+                <TopologyMap attackActive={incidentActive} contained={contained} />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

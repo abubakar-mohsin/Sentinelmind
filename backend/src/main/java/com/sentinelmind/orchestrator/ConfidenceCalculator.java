@@ -26,9 +26,18 @@ public class ConfidenceCalculator {
      * @param ruleMatched from ThreatClassifierAgent (true if a MITRE rule matched)
      */
     public double calculate(double zScore, int feedCount, boolean ruleMatched) {
-        double anomalyScore     = Math.min(zScore / 10.0, 1.0);
-        double threatIntelScore = feedCount >= 1 ? 1.0 : 0.0;
-        double classifierScore  = ruleMatched ? 1.0 : 0.3;
+        return calculatePartial(zScore, feedCount, ruleMatched);
+    }
+
+    /**
+     * @param zScore      from AnomalyDetectionAgent (null if not yet run)
+     * @param feedCount   from ThreatIntelAgent (null if not yet run)
+     * @param ruleMatched from ThreatClassifierAgent (null if not yet run)
+     */
+    public double calculatePartial(Double zScore, Integer feedCount, Boolean ruleMatched) {
+        double anomalyScore     = (zScore != null) ? Math.min(zScore / 10.0, 1.0) : 0.0;
+        double threatIntelScore = (feedCount != null && feedCount >= 1) ? 1.0 : 0.0;
+        double classifierScore  = (ruleMatched != null) ? (ruleMatched ? 1.0 : 0.3) : 0.0;
 
         return (anomalyScore * ANOMALY_WEIGHT)
              + (threatIntelScore * THREAT_INTEL_WEIGHT)

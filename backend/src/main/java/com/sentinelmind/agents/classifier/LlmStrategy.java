@@ -68,7 +68,8 @@ public class LlmStrategy implements ClassificationStrategy {
     private final GroqClient groqClient;
     private final RuleBasedStrategy fallback;
     private final WebSocketGateway wsGateway;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .configure(com.fasterxml.jackson.core.JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true);
 
     public LlmStrategy(GroqClient groqClient, RuleBasedStrategy fallback, WebSocketGateway wsGateway) {
         this.groqClient = groqClient;
@@ -111,26 +112,27 @@ public class LlmStrategy implements ClassificationStrategy {
      * from the Finding so the model has full context for its classification.
      */
     private String buildUserMessage(Finding finding) {
-        return String.format("""
-            Classify this security finding:
-
-            SOURCE IP: %s
-            IS TOR NODE: %s
-            THREAT FEEDS: %d feeds flagged this IP
-            LOGIN HOUR: %d:00 (24h, UTC)
-            LOGIN LATENCY: %dms (robotic speed = <500ms)
-            COUNTRY: RU
-
-            Evidence:
-            %s
-            """,
-            finding.getSourceIp() != null ? finding.getSourceIp() : "unknown",
-            finding.isTorNode() ? "YES — confirmed Tor exit node" : "NO",
-            finding.getFeedCount(),
-            finding.getHour(),
-            finding.getLoginLatencyMs(),
-            finding.getSummary() != null ? finding.getSummary() : "No additional summary"
-        );
+        StringBuilder sb = new StringBuilder();
+        sb.append("Classify this security finding:\n\n");
+        sb.append(String.format("SOURCE IP: %s\n", finding.getSourceIp() != null ? finding.getSourceIp() : "unknown"));
+        sb.append(String.format("IS TOR NODE: %s\n", finding.isTorNode() ? "YES — confirmed Tor exit node" : "NO"));
+        sb.append(String.format("THREAT FEEDS: %d feeds flagged this IP\n", finding.getFeedCount()));
+        sb.append(String.format("LOGIN HOUR: %d:00 (24h, UTC)\n", finding.getHour()));
+        sb.append(String.format("LOGIN LATENCY: %dms (robotic speed = <500ms)\n", finding.getLoginLatencyMs()));
+        
+        if (finding.getAction() != null) sb.append(String.format("ACTION: %s\n", finding.getAction()));
+        if (finding.getFailedAttempts() != null) sb.append(String.format("FAILED ATTEMPTS: %d\n", finding.getFailedAttempts()));
+        if (finding.getFilesAccessed() != null) sb.append(String.format("FILES ACCESSED: %d\n", finding.getFilesAccessed()));
+        if (finding.getDataVolumeGB() != null) sb.append(String.format("DATA VOLUME: %d GB\n", finding.getDataVolumeGB()));
+        if (finding.getPreviousLoginCountry() != null) sb.append(String.format("PREV COUNTRY: %s\n", finding.getPreviousLoginCountry()));
+        if (finding.getMinutesSincePreviousLogin() != null) sb.append(String.format("MINUTES SINCE PREV LOGIN: %d\n", finding.getMinutesSincePreviousLogin()));
+        if (finding.getUserAgent() != null) sb.append(String.format("USER AGENT: %s\n", finding.getUserAgent()));
+        
+        sb.append("\nEvidence:\n");
+        sb.append(finding.getSummary() != null ? finding.getSummary() : "No additional summary");
+        sb.append("\n");
+        
+        return sb.toString();
     }
 
     /**

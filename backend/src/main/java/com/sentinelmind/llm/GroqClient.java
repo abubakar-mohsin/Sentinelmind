@@ -1,5 +1,7 @@
 package com.sentinelmind.llm;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
@@ -73,8 +75,13 @@ public class GroqClient {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    // Jackson ObjectMapper — thread-safe for reads, safe to share
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    // Jackson ObjectMapper — configured to handle Groq's multi-line reasoning responses.
+    // ALLOW_UNQUOTED_CONTROL_CHARS is required because Groq's verbose "reasoning" field
+    // can contain literal newline characters (\\n, code 10) inside the JSON string value,
+    // which strict JSON forbids but Groq emits when producing multi-paragraph output.
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true)
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     /**
      * Returns true only when a real API key has been injected via GROQ_API_KEY.
