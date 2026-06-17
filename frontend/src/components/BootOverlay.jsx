@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { Shield, Cpu, Database, Wifi, GitBranch, CheckCircle } from 'lucide-react';
+
+/*
+ * BootOverlay — Initialization splash screen shown once per dashboard session.
+ * Displays a sequential log of system bootstrap steps with Lucide icons.
+ * Fades out after all lines appear, then calls onComplete() to unmount itself.
+ */
 
 const BOOT_LINES = [
-  { text: 'Loading MITRE ATT&CK framework',       delay: 0 },
-  { text: 'Establishing Kafka event bus',           delay: 200 },
-  { text: 'Connecting Neo4j knowledge graph',       delay: 380 },
-  { text: 'PostgreSQL audit trail ready',           delay: 540 },
-  { text: 'WebSocket gateway online',               delay: 680 },
-  { text: 'Spawning agents: 4 registered',          delay: 820 },
-  { text: 'Confidence threshold: 0.92',             delay: 940 },
-  { text: 'All systems nominal',                    delay: 1100 },
+  { text: 'Loading MITRE ATT&CK framework',   delay: 0,    icon: Shield },
+  { text: 'Establishing Kafka event bus',       delay: 200,  icon: GitBranch },
+  { text: 'Connecting Neo4j knowledge graph',   delay: 380,  icon: Database },
+  { text: 'PostgreSQL audit trail ready',       delay: 540,  icon: Database },
+  { text: 'WebSocket gateway online',           delay: 680,  icon: Wifi },
+  { text: 'Spawning agents: 4 registered',      delay: 820,  icon: Cpu },
+  { text: 'Confidence threshold: 0.92',         delay: 940,  icon: Shield },
+  { text: 'All systems nominal',               delay: 1100, icon: CheckCircle, done: true },
 ];
 
 export default function BootOverlay({ onComplete }) {
@@ -19,9 +26,8 @@ export default function BootOverlay({ onComplete }) {
     const timers = BOOT_LINES.map((line, i) =>
       setTimeout(() => setVisible(prev => [...prev, i]), line.delay)
     );
-
-    const fadeTimer = setTimeout(() => setFading(true), 1600);
-    const doneTimer = setTimeout(onComplete,           2100);
+    const fadeTimer = setTimeout(() => setFading(true),  1600);
+    const doneTimer = setTimeout(onComplete,              2100);
 
     return () => {
       timers.forEach(clearTimeout);
@@ -31,47 +37,26 @@ export default function BootOverlay({ onComplete }) {
   }, [onComplete]);
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: '#0a0a0a',
-      zIndex: 10000,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 24,
-      opacity: fading ? 0 : 1,
-      transition: 'opacity 0.5s ease',
-    }}>
-      <div style={{
-        fontFamily: "'Inter', system-ui, sans-serif",
-        fontSize: 18,
-        fontWeight: 600,
-        color: '#fafafa',
-        letterSpacing: '-0.01em',
-      }}>
-        SENTINELMIND
+    <div className={`boot-overlay ${fading ? 'boot-overlay--fading' : ''}`}>
+      <div className="boot-overlay__logo">
+        <Shield size={22} color="var(--accent)" strokeWidth={2} />
+        <span className="boot-overlay__logo-text">SENTINELMIND</span>
       </div>
 
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 3,
-        alignItems: 'center',
-      }}>
-        {BOOT_LINES.map((line, i) => (
-          visible.includes(i) ? (
-            <div key={i} style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 11,
-              color: i === BOOT_LINES.length - 1 ? '#22c55e' : '#71717a',
-              animation: 'fade-in 0.15s ease forwards',
-            }}>
+      <div className="boot-overlay__lines">
+        {BOOT_LINES.map((line, i) => {
+          if (!visible.includes(i)) return null;
+          const Icon = line.icon;
+          return (
+            <div
+              key={i}
+              className={`boot-overlay__line ${line.done ? 'boot-overlay__line--done' : ''}`}
+            >
+              <Icon size={11} strokeWidth={2} />
               {line.text}
             </div>
-          ) : null
-        ))}
+          );
+        })}
       </div>
     </div>
   );

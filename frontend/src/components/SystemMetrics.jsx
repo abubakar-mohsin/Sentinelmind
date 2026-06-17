@@ -62,22 +62,23 @@ export default function SystemMetrics({ metrics }) {
 
     return (
       <div style={{
-        gridArea:    'metrics',
         display:     'flex',
         gap:         8,
         padding:     '8px',
-        borderTop:   '1px solid var(--border)',
-        background:  'var(--bg-secondary)',
+        borderRadius: '8px',
+        border:      '1px solid var(--border)',
+        background:  'var(--bg-surface)',
+        marginBottom: '12px',
       }}>
         <MetricTile
           label="TOTAL INCIDENTS"
           value={metrics.totalIncidents}
-          color="var(--cyan)"
+          color="var(--accent)"
         />
         <MetricTile
           label="CONTAINMENT RATE"
           value={containmentRateFormatted}
-          color="var(--green)"
+          color="var(--success)"
           unit="%"
         />
         <MetricTile
@@ -92,11 +93,6 @@ export default function SystemMetrics({ metrics }) {
           color="var(--accent)"
           unit="ms"
         />
-        <MetricTile
-          label="SYSTEM STATUS"
-          value={metrics.systemStatus || 'OPERATIONAL'}
-          color={metrics.systemStatus === 'OPERATIONAL' || metrics.status === 'OK' ? 'var(--green)' : 'var(--yellow)'}
-        />
       </div>
     );
   }
@@ -107,25 +103,26 @@ export default function SystemMetrics({ metrics }) {
   const responseS   = responseMs   != null ? (responseMs   / 1000).toFixed(2) : null;
   const confidPct   = confidence   != null ? (confidence * 100).toFixed(1) : null;
   const respColor   = responseS != null
-    ? (parseFloat(responseS) < 5 ? 'var(--green)' : 'var(--yellow)')
+    ? (parseFloat(responseS) < 5 ? 'var(--success)' : 'var(--warning)')
     : 'var(--text-3)';
   const confColor   = confidPct != null
-    ? (parseFloat(confidPct) >= 90 ? 'var(--red)' : parseFloat(confidPct) >= 70 ? 'var(--yellow)' : 'var(--cyan)')
+    ? (parseFloat(confidPct) >= 90 ? 'var(--danger)' : parseFloat(confidPct) >= 70 ? 'var(--warning)' : 'var(--accent)')
     : 'var(--text-3)';
 
   return (
     <div style={{
-      gridArea:    'metrics',
       display:     'flex',
       gap:         8,
       padding:     '8px',
-      borderTop:   '1px solid var(--border)',
-      background:  'var(--bg-secondary)',
+      borderRadius: '8px',
+      border:      '1px solid var(--border)',
+      background:  'var(--bg-surface)',
+      marginBottom: '12px',
     }}>
       <MetricTile
         label="DETECTION TIME"
         value={detectionS}
-        color="var(--cyan)"
+        color="var(--accent)"
         unit="s"
       />
       <MetricTile
@@ -143,7 +140,7 @@ export default function SystemMetrics({ metrics }) {
       <MetricTile
         label="ACTIONS TAKEN"
         value={actionsExecuted}
-        color="var(--red)"
+        color="var(--danger)"
       />
     </div>
   );

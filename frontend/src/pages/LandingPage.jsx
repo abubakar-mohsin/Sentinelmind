@@ -313,8 +313,7 @@ export default function LandingPage() {
         </div>
 
         <h1 className="hero-headline">
-          Detect. Classify.{' '}
-          <span className="gradient-text">Respond automatically.</span>
+          <span className="gradient-text">Detect. Classify. Respond automatically.</span>
         </h1>
 
         <p className="hero-sub">
