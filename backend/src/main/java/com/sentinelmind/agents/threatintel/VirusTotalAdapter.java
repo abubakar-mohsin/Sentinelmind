@@ -3,21 +3,14 @@ package com.sentinelmind.agents.threatintel;
 import org.springframework.stereotype.Component;
 
 /**
- * VirusTotalAdapter — THE ADAPTER (Lab 5)
+ * VirusTotalAdapter — Adapter Pattern (Lab 5)
  *
- * VirusTotal speaks its own API format — it returns JSON with "maliciousVotes",
- * "harmlessVotes", engine names, etc. Our ThreatIntelAgent expects a ThreatResult.
+ * Wraps the VirusTotal API behind the IThreatFeed interface.
+ * Always loaded as a bean. The ThreatIntelAgent switches to this
+ * feed at runtime when the dashboard toggle is set to "Live" mode.
  *
- * This adapter implements IThreatFeed (our standard interface) but internally
- * delegates to VirusTotalApiClient (the external API in its own "language").
- * It then TRANSLATES the VirusTotal response into our standard ThreatResult format.
- *
- * This is "MediaAdapter" from Lab 5 — it implements MediaPlayer (IThreatFeed)
- * but internally uses AdvancedMediaPlayer (VirusTotalApiClient).
- * The ThreatIntelAgent never knows which one is behind the interface.
- *
- * Always loaded as a bean (no @Profile restriction). The dashboard toggle
- * activates this feed at runtime via ThreatIntelConfigService.
+ * This is the Adapter pattern from Lab 5: VirusTotal's API speaks
+ * its own format, this class translates it into our IThreatFeed interface.
  */
 @Component
 public class VirusTotalAdapter implements IThreatFeed {

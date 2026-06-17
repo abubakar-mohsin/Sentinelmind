@@ -13,42 +13,38 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 /**
- * ThreatIntelAgent — checks the source IP against threat intelligence feeds.
+ * ThreatIntelAgent — Threat Intelligence Enrichment
  *
- * Uses the Adapter pattern (Lab 5): both MockThreatFeed and VirusTotalAdapter
- * implement IThreatFeed. This agent injects BOTH and delegates to whichever
- * one ThreatIntelConfigService says is active.
+ * Looks up IP reputation from threat feeds. Supports runtime switching
+ * between MockThreatFeed (demo data) and VirusTotalAdapter (live API)
+ * via the dashboard toggle — no restart needed.
  *
- * The active feed is switched at runtime by the dashboard toggle
- * (POST /api/config/threat-intel-mode) — no restart needed.
- *
- * Demo result for 185.220.101.47 in MOCK mode:
- *   severity=CRITICAL, isTorNode=true, feedCount=4, usedRealApi=false → confidence=1.0
- *
- * In LIVE mode with a real VirusTotal key:
- *   maliciousVotes from the v3 API → usedRealApi=true
+ * Uses the Adapter pattern (Lab 5): both feeds implement IThreatFeed.
+ * The agent doesn't know or care which implementation is active.
  */
 @Component
 public class ThreatIntelAgent implements ISecurityAgent {
 
     private static final Logger log = LoggerFactory.getLogger(ThreatIntelAgent.class);
 
-    // Both feeds are always loaded as beans. @Qualifier selects by Spring bean name
-    // (MockThreatFeed → "mockThreatFeed", VirusTotalAdapter → "virusTotalAdapter").
-    private final IThreatFeed              mockFeed;
-    private final IThreatFeed              realFeed;
+    private final IThreatFeed mockFeed;
+    private final IThreatFeed realFeed;
     private final ThreatIntelConfigService configService;
-    private final EventProducer            eventProducer;
+    private final EventProducer eventProducer;
 
     public ThreatIntelAgent(
-            @Qualifier("mockThreatFeed")      IThreatFeed mockFeed,
-            @Qualifier("virusTotalAdapter")   IThreatFeed realFeed,
+            @Qualifier("mockThreatFeed") IThreatFeed mockFeed,
+            @Qualifier("virusTotalAdapter") IThreatFeed realFeed,
             ThreatIntelConfigService configService,
             EventProducer eventProducer) {
-        this.mockFeed      = mockFeed;
-        this.realFeed      = realFeed;
+        this.mockFeed = mockFeed;
+        this.realFeed = realFeed;
         this.configService = configService;
         this.eventProducer = eventProducer;
+    }
+
+    private IThreatFeed getActiveFeed() {
+        return configService.isUsingMock() ? mockFeed : realFeed;
     }
 
     @Override
@@ -58,26 +54,24 @@ public class ThreatIntelAgent implements ISecurityAgent {
 
     @KafkaListener(topics = KafkaTopics.AGENT_THREATINTEL, groupId = "threatintel-group")
     public void onEvent(SecurityEvent event) {
+        boolean usingReal = !configService.isUsingMock();
         log.info("[THREATINTEL] Checking IP: {} (mode={})",
-                event.getSourceIp(), configService.getCurrentMode());
+                event.getSourceIp(), usingReal ? "real" : "mock");
         Finding finding = process(event);
         eventProducer.publishFinding(finding);
     }
 
     @Override
     public Finding process(SecurityEvent event) {
-        boolean usingMock  = configService.isUsingMock();
-        IThreatFeed feed   = usingMock ? mockFeed : realFeed;
-        ThreatResult result = feed.checkIp(event.getSourceIp());
+        boolean usingReal = !configService.isUsingMock();
+        ThreatResult result = getActiveFeed().checkIp(event.getSourceIp());
 
         log.info("[THREATINTEL] ip={} malicious={} torNode={} feeds={} usedRealApi={}",
                 event.getSourceIp(), result.isMalicious(), result.isTorNode(),
-                result.getFeedCount(), !usingMock);
+                result.getFeedCount(), usingReal);
 
-        // When live VirusTotal returns 0 flags, set an informative summary so the
-        // dashboard explains WHY confidence is lower (real world: IP not yet in feeds).
         String summary = result.getDescription();
-        if (!usingMock && !result.isMalicious()) {
+        if (usingReal && !result.isMalicious()) {
             summary = "VirusTotal: 0 engines flagged this IP — IP appears clean in live threat feeds. " +
                       "Switch to MOCK mode to see the full automated response pipeline with known-malicious IP data.";
         }
@@ -90,7 +84,7 @@ public class ThreatIntelAgent implements ISecurityAgent {
                 .feedCount(result.getFeedCount())
                 .confidence(result.isMalicious() ? 1.0 : 0.0)
                 .summary(summary)
-                .usedRealApi(!usingMock)
+                .usedRealApi(usingReal)
                 .sourceIp(event.getSourceIp())
                 .hour(event.getHour())
                 .loginLatencyMs(event.getLoginLatencyMs())

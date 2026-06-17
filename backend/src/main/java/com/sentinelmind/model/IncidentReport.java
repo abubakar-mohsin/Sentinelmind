@@ -1,6 +1,7 @@
 package com.sentinelmind.model;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -22,38 +23,56 @@ public class IncidentReport {
     private final String incidentId;
     private final SecurityEvent triggeringEvent;
     private final double anomalyScore;
+    private final String anomalySummary;
+    private final double threatIntelScore;
+    private final String threatIntelSummary;
     private final String threatIntelResult;
-    private final String mitreAttackId;
-    private final String mitreTechniqueName;
+    private final double classifierScore;
+    private final List<String> mitreIds;
+    private final List<String> mitreNames;
     private final double confidenceScore;
     private final String severity;
+    private final String reason;
     private final List<String> responseActions;
     private final long detectedAt;
 
-    // Private constructor — you MUST use the Builder to create this object
     private IncidentReport(Builder builder) {
-        this.incidentId        = builder.incidentId;
-        this.triggeringEvent   = builder.triggeringEvent;
-        this.anomalyScore      = builder.anomalyScore;
-        this.threatIntelResult = builder.threatIntelResult;
-        this.mitreAttackId     = builder.mitreAttackId;
-        this.mitreTechniqueName = builder.mitreTechniqueName;
-        this.confidenceScore   = builder.confidenceScore;
-        this.severity          = builder.severity;
-        this.responseActions   = builder.responseActions;
-        this.detectedAt        = builder.detectedAt;
+        this.incidentId         = builder.incidentId;
+        this.triggeringEvent    = builder.triggeringEvent;
+        this.anomalyScore       = builder.anomalyScore;
+        this.anomalySummary     = builder.anomalySummary;
+        this.threatIntelScore   = builder.threatIntelScore;
+        this.threatIntelSummary = builder.threatIntelSummary;
+        this.threatIntelResult  = builder.threatIntelResult;
+        this.classifierScore    = builder.classifierScore;
+        this.mitreIds           = Collections.unmodifiableList(builder.mitreIds);
+        this.mitreNames         = Collections.unmodifiableList(builder.mitreNames);
+        this.confidenceScore    = builder.confidenceScore;
+        this.severity           = builder.severity;
+        this.reason             = builder.reason;
+        this.responseActions    = Collections.unmodifiableList(builder.responseActions);
+        this.detectedAt         = builder.detectedAt;
     }
 
-    public String getIncidentId()       { return incidentId; }
+    public String getIncidentId()            { return incidentId; }
     public SecurityEvent getTriggeringEvent() { return triggeringEvent; }
-    public double getAnomalyScore()     { return anomalyScore; }
-    public String getThreatIntelResult() { return threatIntelResult; }
-    public String getMitreAttackId()    { return mitreAttackId; }
-    public String getMitreTechniqueName() { return mitreTechniqueName; }
-    public double getConfidenceScore()  { return confidenceScore; }
-    public String getSeverity()         { return severity; }
+    public double getAnomalyScore()          { return anomalyScore; }
+    public String getAnomalySummary()        { return anomalySummary; }
+    public double getThreatIntelScore()      { return threatIntelScore; }
+    public String getThreatIntelSummary()    { return threatIntelSummary; }
+    public String getThreatIntelResult()     { return threatIntelResult; }
+    public double getClassifierScore()       { return classifierScore; }
+    public List<String> getMitreIds()        { return mitreIds; }
+    public List<String> getMitreNames()      { return mitreNames; }
+    public double getConfidenceScore()       { return confidenceScore; }
+    public String getSeverity()              { return severity; }
+    public String getReason()                { return reason; }
     public List<String> getResponseActions() { return responseActions; }
-    public long getDetectedAt()         { return detectedAt; }
+    public long getDetectedAt()              { return detectedAt; }
+
+    public static Builder builder() {
+        return new Builder();
+    }
 
     /**
      * The Builder — assembles the IncidentReport piece by piece.
@@ -65,11 +84,16 @@ public class IncidentReport {
         private String incidentId;
         private SecurityEvent triggeringEvent;
         private double anomalyScore;
+        private String anomalySummary;
+        private double threatIntelScore;
+        private String threatIntelSummary;
         private String threatIntelResult;
-        private String mitreAttackId;
-        private String mitreTechniqueName;
+        private double classifierScore;
+        private List<String> mitreIds     = new ArrayList<>();
+        private List<String> mitreNames   = new ArrayList<>();
         private double confidenceScore;
         private String severity;
+        private String reason;
         private List<String> responseActions = new ArrayList<>();
         private long detectedAt = System.currentTimeMillis();
 
@@ -88,14 +112,38 @@ public class IncidentReport {
             return this;
         }
 
+        public Builder anomalySummary(String summary) {
+            this.anomalySummary = summary;
+            return this;
+        }
+
+        public Builder threatIntelScore(double score) {
+            this.threatIntelScore = score;
+            return this;
+        }
+
+        public Builder threatIntelSummary(String summary) {
+            this.threatIntelSummary = summary;
+            return this;
+        }
+
         public Builder threatIntelResult(String result) {
             this.threatIntelResult = result;
             return this;
         }
 
-        public Builder mitreMapping(String id, String name) {
-            this.mitreAttackId = id;
-            this.mitreTechniqueName = name;
+        public Builder classifierScore(double score) {
+            this.classifierScore = score;
+            return this;
+        }
+
+        public Builder mitreIds(List<String> ids) {
+            this.mitreIds = new ArrayList<>(ids);
+            return this;
+        }
+
+        public Builder mitreNames(List<String> names) {
+            this.mitreNames = new ArrayList<>(names);
             return this;
         }
 
@@ -109,12 +157,21 @@ public class IncidentReport {
             return this;
         }
 
+        public Builder reason(String reason) {
+            this.reason = reason;
+            return this;
+        }
+
         public Builder addResponseAction(String action) {
             this.responseActions.add(action);
             return this;
         }
 
-        /** Final step — validates required fields and returns the immutable IncidentReport. */
+        public Builder responseActions(List<String> actions) {
+            this.responseActions = new ArrayList<>(actions);
+            return this;
+        }
+
         public IncidentReport build() {
             if (incidentId == null)      throw new IllegalStateException("incidentId is required");
             if (triggeringEvent == null) throw new IllegalStateException("triggeringEvent is required");

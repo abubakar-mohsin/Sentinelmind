@@ -37,28 +37,23 @@ import java.util.concurrent.TimeUnit;
  * Implements a ReAct (Reason + Act) loop:
  *   1. Receive raw event from Kafka
  *   2. Query Neo4j for context (known-bad IP? user baseline?)
- *   3. Dispatch agents in sequence: Anomaly → ThreatIntel → Classifier
- *   4. Collect findings and compute weighted confidence score
- *   5. If confidence >= 0.92: authorize IncidentResponder
- *   6. Persist incident to PostgreSQL, broadcast status to React dashboard
+ *   3. Use Factory to resolve which agents to dispatch and their Kafka topics
+ *   4. Dispatch agents via Kafka, wait for findings via Kafka
+ *   5. Feed each finding into the Builder incrementally
+ *   6. Compute weighted confidence score
+ *   7. If confidence >= 0.92: authorize IncidentResponder via Kafka
+ *   8. Build the final immutable IncidentReport and persist to PostgreSQL
  *
  * The Orchestrator never ANALYZES events itself — it only decides which agents
  * to call and whether combined evidence is strong enough to authorize a response.
  *
- * Uses the Factory pattern (AgentFactory) to obtain agents and the Builder pattern
- * (IncidentReport.Builder) to assemble the final incident report step by step.
+ * Factory resolves WHERE to dispatch. Kafka delivers HOW. Builder collects WHAT.
  */
 @Component
 public class OrchestratorAgent {
 
     private static final Logger log = LoggerFactory.getLogger(OrchestratorAgent.class);
 
-    /**
-     * System prompt for the Orchestrator's ReAct reasoning steps.
-     * Instructs the model to return one of six decisions in strict JSON format.
-     * The Orchestrator uses the "decision" field to decide whether to continue,
-     * gather more intel, or dismiss the event as a false positive.
-     */
     private static final String ORCHESTRATOR_SYSTEM_PROMPT = """
             You are an elite autonomous cybersecurity orchestrator AI — SentinelMind.
             You reason like a senior SOC analyst and produce detailed, multi-step forensic reasoning.
@@ -96,12 +91,6 @@ public class OrchestratorAgent {
             - GATHER_MORE_INTEL: need more information before deciding
             """;
 
-    // Per-agent blocking queues — findings arrive asynchronously via onFinding()
-    // and are routed here so the ReAct loop can wait for each one.
-    private final BlockingQueue<Finding> anomalyQueue     = new LinkedBlockingQueue<>();
-    private final BlockingQueue<Finding> threatIntelQueue = new LinkedBlockingQueue<>();
-    private final BlockingQueue<Finding> classifierQueue  = new LinkedBlockingQueue<>();
-
     private final AgentFactory           agentFactory;
     private final EventProducer          eventProducer;
     private final KnowledgeGraphService  graphService;
@@ -109,7 +98,11 @@ public class OrchestratorAgent {
     private final WebSocketGateway       wsGateway;
     private final IncidentRepository     incidentRepo;
     private final AbstractEventHandler   handlerChain;
-    private final GroqClient             groqClient;   // nullable-safe: isConfigured() checked before use
+    private final GroqClient             groqClient;
+
+    private final BlockingQueue<Finding> anomalyQueue     = new LinkedBlockingQueue<>();
+    private final BlockingQueue<Finding> threatIntelQueue  = new LinkedBlockingQueue<>();
+    private final BlockingQueue<Finding> classifierQueue   = new LinkedBlockingQueue<>();
 
     @Value("${sentinelmind.confidence-threshold:0.92}")
     private double confidenceThreshold;
@@ -136,6 +129,46 @@ public class OrchestratorAgent {
     }
 
     /**
+     * Kafka findings listener — routes incoming findings to the correct BlockingQueue.
+     * Each agent publishes its Finding to the shared "findings" topic. This listener
+     * routes them by agentName so the main ReAct loop can pick them up in order.
+     */
+    @KafkaListener(topics = KafkaTopics.FINDINGS, groupId = "orchestrator-findings")
+    public void onFinding(Finding finding) {
+        String source = finding.getAgentName();
+        if (source == null) return;
+
+        switch (source) {
+            case "AnomalyDetectionAgent" -> anomalyQueue.offer(finding);
+            case "ThreatIntelAgent"      -> threatIntelQueue.offer(finding);
+            case "ThreatClassifierAgent" -> classifierQueue.offer(finding);
+            default -> log.warn("[ORCHESTRATOR] Unknown finding source: {}", source);
+        }
+    }
+
+    /**
+     * Wait for a finding from an agent via the BlockingQueue.
+     * Returns a default finding on timeout so the pipeline continues gracefully.
+     */
+    private Finding waitForFinding(BlockingQueue<Finding> queue, String agentName, int timeoutSeconds) {
+        try {
+            Finding finding = queue.poll(timeoutSeconds, TimeUnit.SECONDS);
+            if (finding != null) {
+                return finding;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        log.warn("[ORCHESTRATOR] {} timed out after {}s, using default finding", agentName, timeoutSeconds);
+        return Finding.builder()
+            .agentName(agentName)
+            .severity("LOW")
+            .confidence(0.0)
+            .summary(agentName + " did not respond in time")
+            .build();
+    }
+
+    /**
      * Entry point: raw security event arrives from the Kafka raw-events topic.
      * This kicks off the full ReAct reasoning loop.
      */
@@ -147,11 +180,9 @@ public class OrchestratorAgent {
         log.info("[ORCHESTRATOR] ═══ New event received — incidentId={} actor={} ip={}",
                 incidentId, event.getActor(), event.getSourceIp());
 
-        // Broadcast: Orchestrator woke up
         wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "OrchestratorAgent"));
 
-        // --- REASON: Query Neo4j for context (parameterized — no string concatenation) ---
-        // Also reads incidentCount so we can warn if this IP has attacked before.
+        // --- REASON: Query Neo4j for context ---
         Map<String, Object> ipContext = graphService.queryOne(
             "MATCH (ip:IP {address: $address}) " +
             "RETURN ip.isTorNode AS isTorNode, ip.feedCount AS feedCount, " +
@@ -183,7 +214,6 @@ public class OrchestratorAgent {
             if (event.getSourceIp() != null) {
                 graphService.linkIncidentToIp(incidentId, event.getSourceIp());
             }
-            // Broadcast batch graph update to frontend
             wsGateway.broadcast(WebSocketMessage.graphUpdated(incidentId, "INCIDENT_CREATED",
                 List.of(
                     Map.of("id", incidentId, "type", "Incident", "label", incidentId.substring(0, 8),
@@ -196,31 +226,29 @@ public class OrchestratorAgent {
         }
 
         // Build the incident report incrementally using the Builder pattern
-        IncidentReport.Builder reportBuilder = new IncidentReport.Builder()
+        IncidentReport.Builder reportBuilder = IncidentReport.builder()
                 .incidentId(incidentId)
                 .triggeringEvent(event);
 
         // ═══════════════════════════════════════════════
-        // ITERATION 1 — Anomaly Detection
+        // ITERATION 1 — Anomaly Detection (Factory → Kafka → Wait)
         // ═══════════════════════════════════════════════
         wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "AnomalyDetectionAgent"));
-        eventProducer.publishToAgent(KafkaTopics.AGENT_ANOMALY, event);
 
+        AgentFactory.AgentRegistration anomalyReg = agentFactory.getAgent("ANOMALY");
+        eventProducer.publishToAgent(anomalyReg.kafkaTopic(), event);
         Finding anomalyFinding = waitForFinding(anomalyQueue, "AnomalyDetectionAgent", 5);
-        if (anomalyFinding == null) {
-            log.warn("[ORCHESTRATOR] Anomaly agent timed out — using default finding");
-            anomalyFinding = Finding.builder().agentName("AnomalyDetectionAgent")
-                    .severity("MEDIUM").zScore(3.0).confidence(0.30).summary("Timeout").build();
-        }
 
         wsGateway.broadcast(WebSocketMessage.findingCreated(incidentId, anomalyFinding));
         handlerChain.handle(anomalyFinding);
-        reportBuilder.anomalyScore(anomalyFinding.getZScore());
-        
+
+        // Feed to Builder
+        reportBuilder.anomalyScore(anomalyFinding.getZScore())
+                .anomalySummary(anomalyFinding.getSummary());
+
         double currentConfidence = confidenceCalc.calculatePartial(anomalyFinding.getZScore(), null, null);
         wsGateway.broadcast(WebSocketMessage.confidenceUpdated(incidentId, currentConfidence));
 
-        // Run severity chain on anomaly finding to decide whether to escalate
         if (anomalyFinding.getSeverityLevel() < AbstractEventHandler.MEDIUM) {
             log.info("[ORCHESTRATOR] Anomaly LOW — not escalating further");
             return;
@@ -228,8 +256,6 @@ public class OrchestratorAgent {
 
         // ═══════════════════════════════════════════════
         // ReAct REASONING STEP 1 — Should we investigate threat intel?
-        // Groq reasons over the anomaly evidence and returns a structured decision.
-        // Falls back to "CONTINUE" (proceed with pipeline) when Groq is not configured.
         // ═══════════════════════════════════════════════
         StringBuilder eventContext = new StringBuilder();
         if (event.getFailedAttempts() != null) eventContext.append(String.format(" | Failed Attempts: %d", event.getFailedAttempts()));
@@ -271,28 +297,27 @@ public class OrchestratorAgent {
         }
 
         // ═══════════════════════════════════════════════
-        // ITERATION 2 — Threat Intelligence
+        // ITERATION 2 — Threat Intelligence (Factory → Kafka → Wait)
         // ═══════════════════════════════════════════════
         wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "ThreatIntelAgent"));
-        eventProducer.publishToAgent(KafkaTopics.AGENT_THREATINTEL, event);
 
+        AgentFactory.AgentRegistration intelReg = agentFactory.getAgent("THREAT_INTEL");
+        eventProducer.publishToAgent(intelReg.kafkaTopic(), event);
         Finding threatFinding = waitForFinding(threatIntelQueue, "ThreatIntelAgent", 5);
-        if (threatFinding == null) {
-            log.warn("[ORCHESTRATOR] ThreatIntel agent timed out — using default finding");
-            threatFinding = Finding.builder().agentName("ThreatIntelAgent")
-                    .severity("CLEAN").feedCount(0).confidence(0.0).summary("Timeout").build();
-        }
 
         wsGateway.broadcast(WebSocketMessage.findingCreated(incidentId, threatFinding));
         handlerChain.handle(threatFinding);
-        reportBuilder.threatIntelResult(threatFinding.getSummary());
+
+        // Feed to Builder
+        reportBuilder.threatIntelResult(threatFinding.getSummary())
+                .threatIntelScore(threatFinding.getConfidence())
+                .threatIntelSummary(threatFinding.getSummary());
 
         // ═══ GRAPH ENRICHMENT STEP 2 — IP reputation confirmed ═══
         try {
             if (threatFinding.isMalicious() && event.getSourceIp() != null) {
-                // No new nodes needed — IP already exists. Broadcast edge confirmation.
                 wsGateway.broadcast(WebSocketMessage.graphUpdated(incidentId, "THREAT_INTEL_CONFIRMED",
-                    List.of(), // no new nodes
+                    List.of(),
                     List.of(Map.of("source", "ip-" + event.getSourceIp(), "target",
                             event.getActor() != null ? "user-" + event.getActor() : incidentId,
                             "type", "TARGETED", "props", Map.of("confirmed", true)))
@@ -307,7 +332,6 @@ public class OrchestratorAgent {
 
         // ═══════════════════════════════════════════════
         // ReAct REASONING STEP 2 — Should we classify and authorize response?
-        // Combined evidence: anomaly z-score + threat feed hits + Tor node status.
         // ═══════════════════════════════════════════════
         String situation2 = String.format(
                 "CUMULATIVE EVIDENCE SUMMARY — Actor: %s | IP: %s\n\n" +
@@ -333,16 +357,12 @@ public class OrchestratorAgent {
                 threatFinding.isTorNode() ? "YES — confirmed Tor exit node" : "NO",
                 threatFinding.isMalicious() ? "This IP was previously used in credential stuffing campaigns targeting financial institutions." : "No prior campaign association found.",
                 Math.min(anomalyFinding.getZScore() / 10.0, 1.0),
-                0.30,
                 Math.min(anomalyFinding.getZScore() / 10.0, 1.0) * 0.30,
                 threatFinding.getFeedCount() >= 1 ? 1.0 : 0.0,
-                0.40,
-                threatFinding.getFeedCount() >= 1 ? 1.0 : 0.0,
+                (threatFinding.getFeedCount() >= 1 ? 1.0 : 0.0) * 0.40,
                 Math.min(anomalyFinding.getZScore() / 10.0, 1.0) * 0.30
                 + (threatFinding.getFeedCount() >= 1 ? 1.0 : 0.0) * 0.40
         );
-        // In LIVE mode with a clean VirusTotal result, tell Groq so it can acknowledge
-        // the real-world limitation and explain why confidence will be lower.
         if (threatFinding.isUsedRealApi() && !threatFinding.isMalicious()) {
             situation2 += "\n\nNOTE: Live VirusTotal returned 0 flags. This IP may not be in current " +
                           "threat databases. Confidence will be lower than in mock mode.";
@@ -359,25 +379,23 @@ public class OrchestratorAgent {
         }
 
         // ═══════════════════════════════════════════════
-        // ITERATION 3 — Threat Classification
+        // ITERATION 3 — Threat Classification (Factory → Kafka → Wait)
         // ═══════════════════════════════════════════════
         wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "ThreatClassifierAgent"));
-        eventProducer.publishToAgent(KafkaTopics.AGENT_CLASSIFIER, event);
 
+        AgentFactory.AgentRegistration classifierReg = agentFactory.getAgent("CLASSIFIER");
+        eventProducer.publishToAgent(classifierReg.kafkaTopic(), event);
         Finding classifierFinding = waitForFinding(classifierQueue, "ThreatClassifierAgent", 5);
-        if (classifierFinding == null) {
-            log.warn("[ORCHESTRATOR] Classifier agent timed out — using default finding");
-            classifierFinding = Finding.builder().agentName("ThreatClassifierAgent")
-                    .severity("HIGH").ruleMatched(false).confidence(0.3).summary("Timeout").build();
-        }
 
         wsGateway.broadcast(WebSocketMessage.findingCreated(incidentId, classifierFinding));
 
         List<String> mitreIds   = classifierFinding.getMitreIds()   != null ? classifierFinding.getMitreIds()   : List.of();
         List<String> mitreNames = classifierFinding.getMitreNames() != null ? classifierFinding.getMitreNames() : List.of();
-        String firstId   = mitreIds.isEmpty()   ? "UNKNOWN" : mitreIds.get(0);
-        String firstName = mitreNames.isEmpty() ? "Unknown" : mitreNames.get(0);
-        reportBuilder.mitreMapping(firstId, firstName);
+
+        // Feed to Builder
+        reportBuilder.classifierScore(classifierFinding.getConfidence())
+                .mitreIds(mitreIds)
+                .mitreNames(mitreNames);
 
         // ═══ GRAPH ENRICHMENT STEP 3 — Link MITRE techniques ═══
         try {
@@ -408,9 +426,10 @@ public class OrchestratorAgent {
         );
 
         String finalSeverity = determineSeverity(confidence);
-        reportBuilder.confidenceScore(confidence).severity(finalSeverity);
+        reportBuilder.confidenceScore(confidence)
+                .severity(finalSeverity)
+                .reason(classifierFinding.getReason() != null ? classifierFinding.getReason() : "Automated detection");
 
-        // Update incident node with final severity/confidence
         try {
             graphService.createIncidentNode(incidentId, finalSeverity, confidence, "CLASSIFIED");
         } catch (Exception e) {
@@ -424,23 +443,23 @@ public class OrchestratorAgent {
                 incidentId, finalSeverity, confidence, mitreIds, mitreNames, event.getActor(), event.getSourceIp()));
 
         // ═══════════════════════════════════════════════
-        // Persist to PostgreSQL
+        // Build the final immutable IncidentReport and persist to PostgreSQL
         // ═══════════════════════════════════════════════
-        saveIncident(incidentId, event, confidence, finalSeverity,
-                mitreIds, mitreNames, classifierFinding.getReason());
+        IncidentReport report = reportBuilder.build();
+        saveIncident(report);
 
         // ═══════════════════════════════════════════════
-        // ACT: If confidence >= threshold → authorize Incident Responder
+        // ACT: If confidence >= threshold → authorize Incident Responder via Kafka
         // ═══════════════════════════════════════════════
         if (confidence >= confidenceThreshold) {
             log.info("[ORCHESTRATOR] Confidence {} >= {} — AUTHORIZING RESPONSE",
                     String.format("%.3f", confidence), confidenceThreshold);
 
             wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "IncidentResponderAgent"));
-            // Stamp the incidentId onto the event so IncidentResponderAgent uses the same UUID
-            // that was saved to the incidents table — ensuring AuditEntry FK integrity.
             event.setIncidentId(incidentId);
-            eventProducer.publishToAgent(KafkaTopics.AGENT_RESPONDER, event);
+
+            AgentFactory.AgentRegistration responderReg = agentFactory.getAgent("RESPONDER");
+            eventProducer.publishToAgent(responderReg.kafkaTopic(), event);
 
         } else {
             log.info("[ORCHESTRATOR] Confidence below threshold — flagging for human review");
@@ -448,43 +467,10 @@ public class OrchestratorAgent {
             wsGateway.broadcast(WebSocketMessage.incidentContained(incidentId, elapsed, 0));
         }
 
-        // Write attack evidence back to the knowledge graph so it grows with every demo run:
-        // incidentCount increments on the IP node, ATTACKED edges accumulate per incident,
-        // and USED_TECHNIQUE edges link this IP to the matched MITRE AttackTechnique nodes.
         writeIncidentToGraph(incidentId, event, confidence, mitreIds,
                 System.currentTimeMillis() - startMs);
     }
 
-    /**
-     * Receives findings from all agents.
-     * Routes each finding to the right per-agent BlockingQueue so the ReAct loop
-     * can pick it up with waitForFinding().
-     */
-    @KafkaListener(topics = KafkaTopics.FINDINGS, groupId = "orchestrator-findings-group")
-    public void onFinding(Finding finding) {
-        if (finding == null || finding.getAgentName() == null) return;
-
-        log.debug("[ORCHESTRATOR] Received finding from {}", finding.getAgentName());
-
-        switch (finding.getAgentName()) {
-            case "AnomalyDetectionAgent"   -> anomalyQueue.offer(finding);
-            case "ThreatIntelAgent"        -> threatIntelQueue.offer(finding);
-            case "ThreatClassifierAgent"   -> classifierQueue.offer(finding);
-            default -> log.debug("[ORCHESTRATOR] Ignoring finding from {}", finding.getAgentName());
-        }
-    }
-
-    /**
-     * Ask Groq what to do next in the ReAct reasoning loop.
-     *
-     * This is the "Reason" step of ReAct: given the current situation (expressed as a
-     * natural-language string), the AI decides which action to take next.
-     * The returned decision string (e.g. "INVESTIGATE_THREAT_INTEL", "DISMISS") drives
-     * whether the Orchestrator continues, skips steps, or stops early.
-     *
-     * Falls back to "CONTINUE" (always proceed) when Groq is not configured,
-     * so the pipeline degrades gracefully to fully rule-based behaviour in demo/mock mode.
-     */
     private String askGroq(String situation, String incidentId) {
         if (!groqClient.isConfigured()) {
             log.debug("[ORCHESTRATOR] Groq not configured — skipping AI reasoning, using CONTINUE");
@@ -501,7 +487,6 @@ public class OrchestratorAgent {
         try {
             String response = groqClient.chat(ORCHESTRATOR_SYSTEM_PROMPT, situation);
 
-            // Extract the "decision" field from the JSON response
             String clean = response.trim();
             if (clean.startsWith("```")) {
                 clean = clean.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
@@ -519,7 +504,6 @@ public class OrchestratorAgent {
                 return "CONTINUE";
             }
 
-            // Use lenient mapper — Groq's verbose reasoning field contains literal newlines
             ObjectMapper mapper = new ObjectMapper()
                     .configure(com.fasterxml.jackson.core.JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true);
             JsonNode root = mapper.readTree(clean.substring(start, end));
@@ -564,19 +548,6 @@ public class OrchestratorAgent {
                 .build());
     }
 
-    /** Block until a finding arrives or timeout expires. Returns null on timeout. */
-    private Finding waitForFinding(BlockingQueue<Finding> queue, String agentName, int timeoutSeconds) {
-        try {
-            Finding f = queue.poll(timeoutSeconds, TimeUnit.SECONDS);
-            if (f == null) log.warn("[ORCHESTRATOR] Timed out waiting for {}", agentName);
-            return f;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("[ORCHESTRATOR] Interrupted while waiting for {}", agentName);
-            return null;
-        }
-    }
-
     private String determineSeverity(double confidence) {
         if (confidence >= 0.92) return "CRITICAL";
         if (confidence >= 0.70) return "HIGH";
@@ -584,17 +555,6 @@ public class OrchestratorAgent {
         return "LOW";
     }
 
-    /**
-     * Write the results of this incident back to Neo4j.
-     *
-     * Three writes per incident:
-     *   1. SET on IP node — increments incidentCount, stamps lastIncidentId + lastTechnique
-     *   2. CREATE ATTACKED relationship — one edge per incident with full evidence properties
-     *   3. MERGE USED_TECHNIQUE edges — idempotent link from IP to MITRE AttackTechnique nodes
-     *
-     * "contained" is true only when confidence >= threshold (i.e. the responder was authorized).
-     * Wrapped in try/catch so a Neo4j outage never kills the main pipeline.
-     */
     private void writeIncidentToGraph(String incidentId, SecurityEvent event, double confidence,
                                       List<String> mitreIds, long elapsedMs) {
         String  timestamp  = Instant.now().toString();
@@ -602,7 +562,6 @@ public class OrchestratorAgent {
         boolean contained  = confidence >= confidenceThreshold;
 
         try {
-            // WRITE 1 — Update the attacker IP node with the latest incident data.
             graphService.runCypher(
                 "MATCH (ip:IP {address: $sourceIp}) " +
                 "SET ip.lastSeen        = $timestamp, " +
@@ -617,8 +576,6 @@ public class OrchestratorAgent {
                 )
             );
 
-            // WRITE 2 — Create an ATTACKED relationship capturing the full incident context.
-            // One new edge per incident — historical record of every attack attempt.
             graphService.runCypher(
                 "MATCH (ip:IP {address: $sourceIp}) " +
                 "MATCH (u:User {email: $actor}) " +
@@ -642,8 +599,6 @@ public class OrchestratorAgent {
                 )
             );
 
-            // WRITE 3 — MERGE USED_TECHNIQUE edges from this IP to matched MITRE nodes.
-            // MERGE (not CREATE) so repeated demo runs produce one edge per technique, not N.
             if (!mitreIds.isEmpty()) {
                 graphService.runCypher(
                     "MATCH (tech:AttackTechnique) WHERE tech.id IN $mitreIdsList " +
@@ -665,30 +620,27 @@ public class OrchestratorAgent {
         }
     }
 
-    private void saveIncident(String incidentId, SecurityEvent event, double confidence,
-                              String severity, List<String> mitreIds, List<String> mitreNames,
-                              String reason) {
+    private void saveIncident(IncidentReport report) {
         try {
+            SecurityEvent event = report.getTriggeringEvent();
             Incident inc = Incident.builder()
-                    // Use the Orchestrator's own UUID as the PK so AuditEntry.incidentId matches.
-                    .id(UUID.fromString(incidentId))
+                    .id(UUID.fromString(report.getIncidentId()))
                     .eventJson("{\"actor\":\"" + event.getActor()
                              + "\",\"sourceIp\":\"" + event.getSourceIp() + "\"}")
-                    .severity(severity)
-                    .confidence(BigDecimal.valueOf(confidence))
-                    .mitreIds(String.join(",", mitreIds))
-                    .mitreNames(String.join(",", mitreNames))   // Bug 4 fix: was always ""
-                    .reason(reason != null ? reason : "Automated detection")
+                    .severity(report.getSeverity())
+                    .confidence(BigDecimal.valueOf(report.getConfidenceScore()))
+                    .mitreIds(String.join(",", report.getMitreIds()))
+                    .mitreNames(String.join(",", report.getMitreNames()))
+                    .reason(report.getReason())
                     .status("OPEN")
                     .build();
             incidentRepo.save(inc);
-            log.info("[ORCHESTRATOR] Incident persisted to PostgreSQL id={}", incidentId);
+            log.info("[ORCHESTRATOR] Incident persisted to PostgreSQL id={}", report.getIncidentId());
         } catch (Exception e) {
             log.warn("[ORCHESTRATOR] Could not persist incident (DB may not be up): {}", e.getMessage());
         }
     }
 
-    /** Build the initial edges list for the INCIDENT_CREATED graph update. */
     private List<Map<String, Object>> buildInitialEdges(String incidentId, String actor, String sourceIp) {
         List<Map<String, Object>> edges = new ArrayList<>();
         if (actor != null) {

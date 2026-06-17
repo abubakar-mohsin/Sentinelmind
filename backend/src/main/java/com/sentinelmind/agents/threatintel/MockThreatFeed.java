@@ -6,17 +6,11 @@ import org.springframework.stereotype.Component;
 import java.util.Set;
 
 /**
- * MockThreatFeed — Adapter Pattern (Lab 5)
+ * MockThreatFeed — Adapter Pattern (Mock Implementation)
  *
- * This is the "VlcPlayer" from Lab 5 — it already speaks our IThreatFeed
- * interface natively, so no translation is needed.
- *
- * Always loaded as a bean (no @Profile restriction). The dashboard toggle
- * calls ThreatIntelConfigService to switch between this and VirusTotalAdapter
- * at runtime without restarting the application.
- *
- * @Primary makes this the default when IThreatFeed is injected without a
- * qualifier — safe fallback if anything ever bypasses the qualified injection.
+ * Provides a hardcoded list of known-bad IPs for demo/testing.
+ * Always loaded as a bean. The ThreatIntelAgent switches between
+ * this and the real VirusTotal feed at runtime via the dashboard toggle.
  *
  * All six attack scenario IPs are registered here so every demo scenario
  * triggers a full CRITICAL pipeline — anomaly detection, threat intel

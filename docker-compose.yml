@@ -186,7 +186,7 @@ services:
       dockerfile: Dockerfile
     container_name: sentinelmind-frontend
     ports:
-      - "3001:80"
+      - "3000:80"
     depends_on:
       backend:
         condition: service_healthy
