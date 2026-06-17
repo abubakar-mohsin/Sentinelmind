@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import FloatingPaths, { AnimatedHeadline } from '../components/ui/FloatingPaths';
 
 /* ── Navbar ──────────────────────────────────────── */
 
@@ -304,37 +306,86 @@ export default function LandingPage() {
       <Navbar />
 
       {/* ── Hero ── */}
-      <section className="hero">
-        <div className="hero-badge">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-          </svg>
-          Multi-Agent AI Security Platform
+      <section className="hero" style={{ position: 'relative', overflow: 'hidden' }}>
+
+        {/* Animated background paths — two mirrored layers for depth */}
+        <FloatingPaths position={1} />
+        <FloatingPaths position={-1} />
+
+        {/* Radial glow at centre to make paths fade at edges */}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'radial-gradient(ellipse 80% 60% at 50% 50%, transparent 30%, var(--bg-root, #09090B) 80%)',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }} />
+
+        {/* Hero content — sits above path layers */}
+        <div style={{ position: 'relative', zIndex: 2 }}>
+
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            <div className="hero-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              Autonomous Multi-Agent AI Security
+            </div>
+          </motion.div>
+
+          <h1 className="hero-headline">
+            <AnimatedHeadline
+              text="Think faster than"
+              style={{ display: 'block' }}
+            />
+            <AnimatedHeadline
+              text="every threat."
+              className="gradient-text"
+              style={{ display: 'block' }}
+            />
+          </h1>
+
+          <motion.p
+            className="hero-sub"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7, duration: 0.6 }}
+          >
+            SentinelMind deploys a coordinated swarm of AI agents that detect credential stuffing
+            in real time, map every threat to MITRE ATT&CK, and neutralize it autonomously —
+            all within 10 seconds of the first suspicious signal.
+          </motion.p>
+
+          <motion.div
+            className="hero-actions"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.95, duration: 0.5 }}
+          >
+            <button className="btn btn-primary btn-xl" onClick={() => navigate('/signup')}>
+              Start protecting now
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+            <button className="btn btn-ghost btn-xl" onClick={() => navigate('/login')}>
+              Watch the live demo
+            </button>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 32 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.2, duration: 0.7 }}
+          >
+            <DashboardPreview />
+          </motion.div>
+
         </div>
-
-        <h1 className="hero-headline">
-          Detect. Classify.{' '}
-          <span className="gradient-text">Respond automatically.</span>
-        </h1>
-
-        <p className="hero-sub">
-          SentinelMind deploys an autonomous multi-agent AI system that detects credential stuffing,
-          classifies threats to MITRE ATT&CK, and neutralizes them — in under 10 seconds.
-        </p>
-
-        <div className="hero-actions">
-          <button className="btn btn-primary btn-xl" onClick={() => navigate('/signup')}>
-            Get started free
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-          </button>
-          <button className="btn btn-ghost btn-xl" onClick={() => navigate('/login')}>
-            View live demo
-          </button>
-        </div>
-
-        <DashboardPreview />
       </section>
 
       {/* ── Stats band ── */}
