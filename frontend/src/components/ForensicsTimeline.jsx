@@ -99,8 +99,68 @@ export default function ForensicsTimeline({ incidentId }) {
         <TimelineNode title="Blast Radius" body={tl.blastRadius} icon="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" color="var(--warning)" />
         <TimelineNode title="Unmitigated Impact" body={tl.unmitigatedImpact} icon="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" color="var(--danger)" isLast />
       </div>
+
+      {data.events && data.events.length > 0 && (
+        <div style={{ marginTop: 40, borderTop: '1px solid var(--border)', paddingTop: 24 }}>
+          <h3 style={{ margin: '0 0 20px 0', color: 'var(--text-1)', fontSize: 16, fontWeight: 700, letterSpacing: '0.05em' }}>
+            CHRONOLOGICAL RECONSTRUCTION
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {data.events.map((evt, idx) => {
+              const dateObj = new Date(evt.timestamp);
+              const formattedTime = isNaN(dateObj.getTime()) ? evt.timestamp : dateObj.toLocaleTimeString();
+              return (
+                <TimelineNode
+                  key={idx}
+                  title={evt.eventType.replace(/_/g, ' ')}
+                  time={formattedTime}
+                  body={evt.description}
+                  icon={getIconForType(evt.eventType)}
+                  color={getColorForSeverity(evt.severity)}
+                  isLast={idx === data.events.length - 1}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
     </div>
   );
+}
+
+function getIconForType(type) {
+  switch (type) {
+    case 'RECONNAISSANCE':
+      return "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z";
+    case 'INITIAL_ACCESS':
+      return "M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1";
+    case 'ANOMALY_DETECTED':
+      return "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z";
+    case 'TECHNIQUE_IDENTIFIED':
+      return "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z";
+    case 'LATERAL_MOVEMENT':
+      return "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4";
+    case 'CONTAINMENT':
+      return "M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636";
+    default:
+      return "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z";
+  }
+}
+
+function getColorForSeverity(severity) {
+  switch (severity) {
+    case 'CRITICAL':
+      return 'var(--danger)';
+    case 'HIGH':
+      return 'var(--warning)';
+    case 'MEDIUM':
+      return 'var(--warning)';
+    case 'LOW':
+    case 'INFO':
+    default:
+      return 'var(--accent)';
+  }
 }
 
 function TimelineNode({ title, time, body, icon, color, isLast }) {
@@ -126,7 +186,7 @@ function TimelineNode({ title, time, body, icon, color, isLast }) {
 
       {/* Content column */}
       <div style={{ paddingBottom: isLast ? 0 : 32, flex: 1 }}>
-        <h4 style={{ margin: '0 0 4px 0', color: 'var(--text-1)', fontSize: 15 }}>{title}</h4>
+        <h4 style={{ margin: '0 0 4px 0', color: 'var(--text-1)', fontSize: 15, textTransform: 'uppercase' }}>{title}</h4>
         {time && <div style={{ fontSize: 13, color: color || 'var(--text-3)', fontWeight: 600, marginBottom: 4 }}>{time}</div>}
         {body && <div style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.5 }}>{body}</div>}
       </div>

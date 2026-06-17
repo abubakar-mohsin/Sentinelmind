@@ -81,7 +81,8 @@ public class WebSocketMessage {
                                                        List<String> mitreIds,
                                                        List<String> mitreNames,
                                                        String actor,
-                                                       String sourceIp) {
+                                                       String sourceIp,
+                                                       String reason) {
         return WebSocketMessage.builder()
                 .type("INCIDENT_CLASSIFIED")
                 .timestamp(Instant.now().toString())
@@ -92,6 +93,7 @@ public class WebSocketMessage {
                 .mitreNames(mitreNames)
                 .actor(actor)
                 .sourceIp(sourceIp)
+                .reason(reason)
                 .message("Incident classified — confidence " + String.format("%.2f", confidence))
                 .build();
     }

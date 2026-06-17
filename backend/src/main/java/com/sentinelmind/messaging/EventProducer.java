@@ -26,24 +26,28 @@ public class EventProducer {
     /** Publish a raw SecurityEvent to the raw-events topic. */
     public void publishEvent(SecurityEvent event) {
         log.info("Publishing SecurityEvent from actor={} ip={}", event.getActor(), event.getSourceIp());
-        kafkaTemplate.send(KafkaTopics.RAW_EVENTS, event.getActor(), event);
+        String key = event.getActor() != null ? event.getActor() : "unknown";
+        kafkaTemplate.send(KafkaTopics.RAW_EVENTS, java.util.Objects.requireNonNull(key), event);
     }
 
     /** Publish a SecurityEvent to any agent-specific topic. */
-    public void publishToAgent(String topic, SecurityEvent event) {
+    public void publishToAgent(@org.springframework.lang.NonNull String topic, SecurityEvent event) {
         log.debug("Dispatching event to agent topic={}", topic);
-        kafkaTemplate.send(topic, event.getActor(), event);
+        String key = event.getActor() != null ? event.getActor() : "unknown";
+        kafkaTemplate.send(topic, java.util.Objects.requireNonNull(key), event);
     }
 
     /** Publish an agent Finding to the findings topic. */
     public void publishFinding(Finding finding) {
         log.debug("Publishing finding from agent={} severity={}", finding.getAgentName(), finding.getSeverity());
-        kafkaTemplate.send(KafkaTopics.FINDINGS, finding.getAgentName(), finding);
+        String key = finding.getAgentName() != null ? finding.getAgentName() : "unknown";
+        kafkaTemplate.send(KafkaTopics.FINDINGS, java.util.Objects.requireNonNull(key), finding);
     }
 
     /** Publish a WebSocketMessage to the responses topic (forwarded to dashboard). */
     public void publishResponse(WebSocketMessage msg) {
         log.debug("Publishing response type={} incidentId={}", msg.getType(), msg.getIncidentId());
-        kafkaTemplate.send(KafkaTopics.RESPONSES, msg.getIncidentId(), msg);
+        String key = msg.getIncidentId() != null ? msg.getIncidentId() : "unknown";
+        kafkaTemplate.send(KafkaTopics.RESPONSES, java.util.Objects.requireNonNull(key), msg);
     }
 }

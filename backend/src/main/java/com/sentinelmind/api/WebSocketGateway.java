@@ -41,7 +41,7 @@ public class WebSocketGateway {
         try {
             String json = objectMapper.writeValueAsString(payload);
             log.info("Sending raw alert: type={}", payload.get("type"));
-            messagingTemplate.convertAndSend(DASHBOARD_TOPIC, json);
+            messagingTemplate.convertAndSend(DASHBOARD_TOPIC, java.util.Objects.requireNonNull(json));
         } catch (Exception e) {
             log.error("Failed to serialize raw alert", e);
         }

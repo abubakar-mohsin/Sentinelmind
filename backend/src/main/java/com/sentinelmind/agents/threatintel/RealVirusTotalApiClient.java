@@ -40,7 +40,7 @@ public class RealVirusTotalApiClient implements VirusTotalApiClient {
             headers.set("x-apikey", apiKey);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            ResponseEntity<String> response = restTemplate.exchange(url, java.util.Objects.requireNonNull(HttpMethod.GET), entity, String.class);
             
             JsonNode root = objectMapper.readTree(response.getBody());
             JsonNode stats = root.path("data").path("attributes").path("last_analysis_stats");

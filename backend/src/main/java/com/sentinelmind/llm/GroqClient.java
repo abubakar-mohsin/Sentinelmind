@@ -79,6 +79,7 @@ public class GroqClient {
     // ALLOW_UNQUOTED_CONTROL_CHARS is required because Groq's verbose "reasoning" field
     // can contain literal newline characters (\\n, code 10) inside the JSON string value,
     // which strict JSON forbids but Groq emits when producing multi-paragraph output.
+    @SuppressWarnings("deprecation")
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true)
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);

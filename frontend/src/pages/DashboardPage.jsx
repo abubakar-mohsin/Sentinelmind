@@ -88,6 +88,7 @@ export default function DashboardPage() {
   const [graphEvents,    setGraphEvents]    = useState([]);
   const [graphNodes,     setGraphNodes]     = useState([]);
   const [graphEdges,     setGraphEdges]     = useState([]);
+  const [systemAlerts,   setSystemAlerts]   = useState([]);
 
   const currentIdRef    = useRef(null);
   const activatedAtRef  = useRef(null);
@@ -112,7 +113,7 @@ export default function DashboardPage() {
     const fetchMetrics = async () => {
       try {
         const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8080';
-        const response = await fetch(`${API_BASE}/api/metrics/summary`);
+        const response = await fetch(`${API_BASE}/api/metrics`);
         if (response.ok) {
           const data = await response.json();
           setPlatformMetrics(data);
@@ -144,6 +145,7 @@ export default function DashboardPage() {
       setGraphEvents([]);
       setGraphNodes([]);
       setGraphEdges([]);
+      setSystemAlerts([]);
     }
 
     switch (msg.type) {
@@ -251,14 +253,32 @@ export default function DashboardPage() {
 
       case 'CAMPAIGN_ALERT':
         console.warn('[CAMPAIGN_ALERT]', msg.message);
+        setSystemAlerts(prev => [...prev, {
+          id: Math.random().toString(),
+          type: 'warning',
+          message: msg.message,
+          timestamp: msg.timestamp || new Date().toISOString()
+        }]);
         break;
 
       case 'CAMPAIGN_CORRELATION':
         console.warn('[CAMPAIGN]', msg.message, '| Related:', msg.relatedIncidents);
+        setSystemAlerts(prev => [...prev, {
+          id: Math.random().toString(),
+          type: 'info',
+          message: msg.message,
+          timestamp: msg.timestamp || new Date().toISOString()
+        }]);
         break;
 
       case 'CRITICAL_ALERT':
         console.error('[CRITICAL_ALERT]', msg.message);
+        setSystemAlerts(prev => [...prev, {
+          id: Math.random().toString(),
+          type: 'error',
+          message: msg.message,
+          timestamp: msg.timestamp || new Date().toISOString()
+        }]);
         break;
 
       default: break;
@@ -305,6 +325,45 @@ export default function DashboardPage() {
         </div>
 
         <div className="page-content">
+          {/* System Alerts Banners */}
+          {systemAlerts.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {systemAlerts.map(alert => (
+                <div key={alert.id} style={{
+                  padding: '10px 16px',
+                  borderRadius: 8,
+                  border: alert.type === 'error' ? '1px solid rgba(239,68,68,0.4)' : alert.type === 'warning' ? '1px solid rgba(245,158,11,0.4)' : '1px solid rgba(99,102,241,0.4)',
+                  background: alert.type === 'error' ? 'rgba(239,68,68,0.08)' : alert.type === 'warning' ? 'rgba(245,158,11,0.08)' : 'rgba(99,102,241,0.08)',
+                  color: alert.type === 'error' ? '#EF4444' : alert.type === 'warning' ? '#F59E0B' : '#818CF8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: 13,
+                  animation: 'sweep-in 0.25s ease'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>{alert.type === 'error' ? '🚨' : alert.type === 'warning' ? '⚠' : 'ℹ'}</span>
+                    <strong style={{ textTransform: 'uppercase' }}>[{alert.type}]</strong>
+                    <span>{alert.message}</span>
+                  </div>
+                  <button onClick={() => setSystemAlerts(prev => prev.filter(a => a.id !== alert.id))} style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    padding: '0 4px',
+                    opacity: 0.6
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                  onMouseLeave={e => e.currentTarget.style.opacity = 0.6}>
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {activePage === 'forensics' ? (
             <ForensicsTimeline incidentId={currentId} />
           ) : activePage === 'threat-graph' ? (

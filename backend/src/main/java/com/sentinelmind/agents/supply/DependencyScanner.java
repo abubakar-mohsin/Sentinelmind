@@ -35,32 +35,48 @@ public class DependencyScanner implements ISecurityAgent {
         // Spring ecosystem
         "spring-boot", "spring-core", "spring-web", "spring-security",
         "spring-data-jpa", "spring-kafka", "spring-webmvc", "spring-context",
+        "spring-beans", "spring-aop", "spring-expression", "spring-tx",
+        "spring-test", "spring-boot-starter-web", "spring-boot-starter-security",
+        "spring-boot-starter-data-jpa", "spring-boot-starter-test",
+        "spring-boot-autoconfigure", "spring-cloud-commons", "spring-cloud-context",
         // Apache
         "log4j-core", "log4j-api", "commons-lang3", "commons-io",
         "commons-collections", "commons-codec", "commons-logging",
-        "kafka-clients", "kafka-streams", "httpcomponents-client",
-        "struts2-core", "tomcat-embed-core",
+        "commons-beanutils", "commons-configuration", "commons-dbcp2",
+        "commons-pool2", "commons-validator", "commons-math3", "commons-text",
+        "kafka-clients", "kafka-streams", "httpcomponents-client", "httpclient",
+        "struts2-core", "tomcat-embed-core", "velocity", "poi", "pdfbox",
         // Google
-        "guava", "gson", "protobuf-java", "grpc-core",
+        "guava", "gson", "protobuf-java", "grpc-core", "grpc-stub",
+        "grpc-protobuf", "grpc-netty", "dagger", "zxing",
         // Jackson
         "jackson-databind", "jackson-core", "jackson-annotations",
+        "jackson-datatype-jsr310", "jackson-datatype-jdk8",
         // Database
         "postgresql", "mysql-connector-j", "h2", "flyway-core",
-        "hibernate-core", "mybatis",
+        "hibernate-core", "mybatis", "mybatis-spring", "sqlite-jdbc",
+        "mongodb-driver-sync", "redis-clients", "jedis", "lettuce-core",
         // Networking
-        "netty-all", "netty-codec-http", "okhttp", "retrofit",
+        "netty-all", "netty-codec-http", "netty-handler", "netty-buffer",
+        "netty-common", "netty-transport", "okhttp", "retrofit", "jsoup",
         // Security
         "bouncycastle", "bcprov-jdk15on", "nimbus-jose-jwt",
-        "spring-security-crypto", "jasypt",
+        "spring-security-crypto", "jasypt", "jjwt-api", "jjwt-impl",
         // Testing
         "junit-jupiter", "mockito-core", "assertj-core", "testcontainers",
+        "junit-jupiter-api", "junit-jupiter-engine", "hamcrest",
         // Build/util
-        "lombok", "mapstruct", "slf4j-api", "logback-classic",
-        "micrometer-core", "resilience4j-core",
+        "lombok", "mapstruct", "slf4j-api", "logback-classic", "logback-core",
+        "micrometer-core", "resilience4j-core", "cglib", "asm", "quartz",
         // npm packages
-        "lodash", "express", "react", "axios", "moment",
-        "webpack", "babel-core", "eslint", "typescript",
-        "socket.io", "mongoose", "sequelize", "dotenv"
+        "lodash", "express", "react", "react-dom", "axios", "moment",
+        "webpack", "babel-core", "eslint", "typescript", "prop-types",
+        "socket.io", "mongoose", "sequelize", "dotenv", "redux", "react-redux",
+        "@reduxjs/toolkit", "react-router-dom", "vue", "vuex", "pinia",
+        "chalk", "commander", "yargs", "minimist", "debug", "uuid", "nanoid",
+        "classnames", "clsx", "next", "nuxt", "gatsby", "vite", "jest",
+        "cypress", "playwright", "puppeteer", "sass", "tailwindcss",
+        "bootstrap", "jquery", "rxjs", "date-fns", "dayjs", "zod", "yup"
     );
 
     @Override

@@ -54,9 +54,12 @@ function MetricTile({ label, value, color, unit }) {
 export default function SystemMetrics({ metrics }) {
   if (!metrics) return null;
 
-  const hasPlatformMetrics = metrics.totalIncidents != null || metrics.criticalActive != null || metrics.systemStatus != null;
+  const hasPlatformMetrics = metrics.totalIncidents != null || metrics.falsePositiveRate != null || metrics.systemStatus != null;
 
   if (hasPlatformMetrics) {
+    const containmentRateFormatted = metrics.containmentRate != null ? Math.round(metrics.containmentRate * 10) / 10 : 0;
+    const falsePositiveRateFormatted = metrics.falsePositiveRate != null ? Math.round(metrics.falsePositiveRate * 10) / 10 : 0;
+
     return (
       <div style={{
         gridArea:    'metrics',
@@ -72,19 +75,27 @@ export default function SystemMetrics({ metrics }) {
           color="var(--cyan)"
         />
         <MetricTile
-          label="CRITICAL ACTIVE"
-          value={metrics.criticalActive}
-          color="var(--red)"
+          label="CONTAINMENT RATE"
+          value={containmentRateFormatted}
+          color="var(--green)"
+          unit="%"
         />
         <MetricTile
-          label="AGENTS ONLINE"
-          value={metrics.agentsOnline}
-          color="var(--green)"
+          label="FALSE POSITIVE RATE"
+          value={falsePositiveRateFormatted}
+          color="var(--yellow)"
+          unit="%"
+        />
+        <MetricTile
+          label="AVG LATENCY"
+          value={metrics.avgDetectionLatencyMs}
+          color="var(--accent)"
+          unit="ms"
         />
         <MetricTile
           label="SYSTEM STATUS"
-          value={metrics.systemStatus}
-          color={metrics.systemStatus === 'OPERATIONAL' ? 'var(--green)' : 'var(--yellow)'}
+          value={metrics.systemStatus || 'OPERATIONAL'}
+          color={metrics.systemStatus === 'OPERATIONAL' || metrics.status === 'OK' ? 'var(--green)' : 'var(--yellow)'}
         />
       </div>
     );

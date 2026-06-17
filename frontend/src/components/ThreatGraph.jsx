@@ -133,6 +133,7 @@ export default function ThreatGraph({ graphEvents, incidentId, incidentActive, c
 
   /* ── Process GRAPH_UPDATED WebSocket events ── */
   useEffect(() => {
+    if (replayMode) return;
     if (!graphEvents || graphEvents.length === 0) return;
     const latest = graphEvents[graphEvents.length - 1];
     if (!latest.details) return;
@@ -161,7 +162,7 @@ export default function ThreatGraph({ graphEvents, incidentId, incidentActive, c
     if (changed) {
       renderGraph();
     }
-  }, [graphEvents]);
+  }, [graphEvents, replayMode]);
 
   /* ── Main D3 render ── */
   const renderGraph = useCallback(() => {
@@ -402,6 +403,51 @@ export default function ThreatGraph({ graphEvents, incidentId, incidentActive, c
     }
   }, [incidentActive, contained]);
 
+  const applyReplayStep = useCallback((step) => {
+    if (!graphEvents || graphEvents.length === 0 || step < 0) return;
+
+    // Start with baseline nodes/edges (no isNew attribute)
+    const baselineNodes = nodesRef.current.filter(n => !n.isNew);
+    const baselineEdges = edgesRef.current.filter(e => !e.isNew);
+
+    const tempSeenNodes = new Set(baselineNodes.map(n => n.id));
+    const tempSeenEdges = new Set(baselineEdges.map(e => `${e.source}-${e.type}-${e.target}`));
+
+    const activeNodes = [...baselineNodes];
+    const activeEdges = [...baselineEdges];
+
+    // Process all events from 0 up to current step
+    for (let i = 0; i <= step && i < graphEvents.length; i++) {
+      const evt = graphEvents[i];
+      if (evt && evt.details) {
+        const newNodes = evt.details.newNodes || [];
+        const newEdges = evt.details.newEdges || [];
+
+        newNodes.forEach(n => {
+          if (!tempSeenNodes.has(n.id)) {
+            tempSeenNodes.add(n.id);
+            activeNodes.push({ ...n, x: undefined, y: undefined, isNew: true });
+          }
+        });
+
+        newEdges.forEach(e => {
+          const key = `${e.source}-${e.type}-${e.target}`;
+          if (!tempSeenEdges.has(key)) {
+            tempSeenEdges.add(key);
+            activeEdges.push({ ...e, isNew: true });
+          }
+        });
+      }
+    }
+
+    nodesRef.current = activeNodes;
+    edgesRef.current = activeEdges;
+    seenNodes.current = tempSeenNodes;
+    seenEdges.current = tempSeenEdges;
+
+    renderGraph();
+  }, [graphEvents, renderGraph]);
+
   /* ── Replay functionality ── */
   useEffect(() => {
     if (!replayMode || !graphEvents || graphEvents.length === 0) return;
@@ -409,19 +455,22 @@ export default function ThreatGraph({ graphEvents, incidentId, incidentActive, c
       setReplayMode(false);
       return;
     }
-    const timer = setTimeout(() => setReplayStep(s => s + 1), 1200);
+    const timer = setTimeout(() => {
+      const nextStep = replayStep + 1;
+      if (nextStep < graphEvents.length) {
+        setReplayStep(nextStep);
+        applyReplayStep(nextStep);
+      } else {
+        setReplayMode(false);
+      }
+    }, 1200);
     return () => clearTimeout(timer);
-  }, [replayMode, replayStep, graphEvents]);
+  }, [replayMode, replayStep, graphEvents, applyReplayStep]);
 
   function startReplay() {
-    // Reset graph to baseline
-    nodesRef.current = nodesRef.current.filter(n => !n.isNew);
-    edgesRef.current = edgesRef.current.filter(e => !e.isNew);
-    seenNodes.current = new Set(nodesRef.current.map(n => n.id));
-    seenEdges.current = new Set(edgesRef.current.map(e => `${e.source}-${e.type}-${e.target}`));
     setReplayStep(0);
     setReplayMode(true);
-    renderGraph();
+    applyReplayStep(0);
   }
 
   /* ── Build legend from current node types ── */

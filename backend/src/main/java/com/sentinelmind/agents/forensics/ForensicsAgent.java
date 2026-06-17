@@ -93,7 +93,7 @@ public class ForensicsAgent implements ISecurityAgent {
             return report;
         }
 
-        Optional<Incident> incidentOpt = incidentRepo.findById(uuid);
+        Optional<Incident> incidentOpt = incidentRepo.findById(java.util.Objects.requireNonNull(uuid));
         if (incidentOpt.isEmpty()) {
             report.put("error", "Incident not found: " + incidentId);
             return report;
@@ -158,6 +158,15 @@ public class ForensicsAgent implements ISecurityAgent {
         report.put("responseTimeline", timeline);
         report.put("totalActionsExecuted", actions.size());
 
+        try {
+            ForensicsTimeline structuredTimeline = generateTimeline(incidentId, sourceIp, actor);
+            if (structuredTimeline != null && structuredTimeline.getEvents() != null) {
+                report.put("events", structuredTimeline.getEvents());
+            }
+        } catch (Exception e) {
+            log.error("[FORENSICS] Failed to generate structured timeline: {}", e.getMessage());
+        }
+
         log.info("[FORENSICS] Report complete: {} connections, {} response actions",
                 report.get("attackerConnections") instanceof List
                         ? ((List<?>) report.get("attackerConnections")).size() : 0,
@@ -168,7 +177,7 @@ public class ForensicsAgent implements ISecurityAgent {
         if (llmTimeline != null) {
             try {
                 // Parse the JSON response
-                Map<String, Object> timelineMap = objectMapper.readValue(llmTimeline, Map.class);
+                Map<String, Object> timelineMap = objectMapper.readValue(llmTimeline, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
                 report.put("forensicsTimeline", timelineMap);
             } catch (Exception e) {
                 log.error("[FORENSICS] Failed to parse Groq response as JSON: {}", e.getMessage());
@@ -249,7 +258,7 @@ public class ForensicsAgent implements ISecurityAgent {
         int hops = 2;
         try {
             List<Map<String, Object>> pathResults = graphService.query(
-                "MATCH path = (ip:IP {address: $ip})-[r:ATTACKED|TARGETS*1..3]->(target) " +
+                "MATCH path = (ip:IP {address: $ip})-[r:ATTACKED|TARGETS|COMMUNICATES_WITH|LATERAL_MOVE_TO*1..4]->(target) " +
                 "RETURN ip.address as ipAddress, ip.country as country, " +
                 "       ip.reputation as reputation, ip.feedCount as feedCount, " +
                 "       labels(target)[0] as targetType, " +
@@ -373,6 +382,32 @@ public class ForensicsAgent implements ISecurityAgent {
             et.setRelationshipType("USED_TECHNIQUE");
             et.setTimestamp(Instant.ofEpochSecond(now - 150).toString());
             events.add(et);
+        }
+
+        // Query lateral movement from graph
+        try {
+            List<Map<String, Object>> lateralResults = graphService.query(
+                "MATCH (u:User {email: $email})-[r:LATERAL_MOVE_TO]->(target) " +
+                "RETURN target.name as targetName, labels(target)[0] as targetType, target.id as targetId",
+                Map.of("email", actorEmail != null ? actorEmail : "")
+            );
+            for (Map<String, Object> row : lateralResults) {
+                String targetName = row.get("targetName") != null ? row.get("targetName").toString() : "Unknown Asset";
+                String targetType = row.get("targetType") != null ? row.get("targetType").toString() : "Asset";
+                String targetId = row.get("targetId") != null ? row.get("targetId").toString() : "";
+                
+                ForensicsTimeline.TimelineEvent elm = new ForensicsTimeline.TimelineEvent();
+                elm.setEventType("LATERAL_MOVEMENT");
+                elm.setDescription("Lateral movement detected: Compromised user session used to access " + targetType + " '" + targetName + "'");
+                elm.setSeverity("HIGH");
+                elm.setSourceNode(actorEmail);
+                elm.setTargetNode(targetId.isEmpty() ? targetName : targetId);
+                elm.setRelationshipType("LATERAL_MOVE_TO");
+                elm.setTimestamp(Instant.ofEpochSecond(now - 120).toString());
+                events.add(elm);
+            }
+        } catch (Exception e) {
+            log.warn("[FORENSICS] Lateral movement query failed: {}", e.getMessage());
         }
 
         // Event 5 — CONTAINMENT

@@ -41,6 +41,7 @@ public class Incident {
     // Comma-separated MITRE technique names
     private String mitreNames;
 
+    @Column(columnDefinition = "text")
     private String reason;
 
     @Builder.Default

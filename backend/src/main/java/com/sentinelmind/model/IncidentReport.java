@@ -180,7 +180,7 @@ public class IncidentReport {
             StringBuilder r = new StringBuilder();
 
             if (anomalyScore > 0) {
-                double zScore = anomalyScore * 10.0;
+                double zScore = anomalyScore;
                 r.append(String.format(
                     "Anomaly detection flagged a %.1fσ deviation from behavioral baseline",
                     zScore));

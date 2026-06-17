@@ -159,3 +159,123 @@ SET c.affectedPackage   = 'protobuf-java',
     c.affectedVersions  = '<3.21.7',
     c.patchedVersion    = '3.21.7',
     c.publishedDate     = '2022-10-22';
+
+// ── CVE-2023-50164 — Apache Struts Path Traversal RCE (struts2-core) ─────
+MERGE (c:CVE {id: 'CVE-2023-50164'})
+SET c.affectedPackage   = 'struts2-core',
+    c.description       = 'Apache Struts path traversal and remote code execution. ' +
+                          'An attacker can exploit file upload parameters to perform path traversal ' +
+                          'and upload a malicious file, leading to RCE.',
+    c.cvssScore         = 9.8,
+    c.epssScore         = 0.941,
+    c.severity          = 'CRITICAL',
+    c.exploitedInWild   = true,
+    c.cisaKev           = true,
+    c.affectedVersions  = '<2.5.33,<6.3.0.2',
+    c.patchedVersion    = '6.3.0.2',
+    c.publishedDate     = '2023-12-07';
+
+// ── CVE-2022-22972 — VMware Workspace ONE Auth Bypass (workspace-one) ─────
+MERGE (c:CVE {id: 'CVE-2022-22972'})
+SET c.affectedPackage   = 'workspace-one',
+    c.description       = 'VMware Workspace ONE Access and Identity Manager authentication bypass. ' +
+                          'A malicious actor with network access to the user interface may obtain ' +
+                          'administrative access without authentication.',
+    c.cvssScore         = 9.8,
+    c.epssScore         = 0.852,
+    c.severity          = 'CRITICAL',
+    c.exploitedInWild   = true,
+    c.cisaKev           = true,
+    c.affectedVersions  = '<22.05',
+    c.patchedVersion    = '22.05',
+    c.publishedDate     = '2022-05-18';
+
+// ── CVE-2023-34034 — Spring Security WebFlux Bypass (spring-security-webflux)
+MERGE (c:CVE {id: 'CVE-2023-34034'})
+SET c.affectedPackage   = 'spring-security-webflux',
+    c.description       = 'Spring Security authorization bypass for WebFlux applications. ' +
+                          'A security bypass can occur when a pattern matching rule is misconfigured ' +
+                          'leading to unexpected endpoint exposure.',
+    c.cvssScore         = 9.8,
+    c.epssScore         = 0.231,
+    c.severity          = 'CRITICAL',
+    c.exploitedInWild   = false,
+    c.cisaKev           = false,
+    c.affectedVersions  = '<6.1.2',
+    c.patchedVersion    = '6.1.2',
+    c.publishedDate     = '2023-08-18';
+
+// ── CVE-2024-22243 — Spring Framework SSRF (spring-core) ─────────────────
+MERGE (c:CVE {id: 'CVE-2024-22243'})
+SET c.affectedPackage   = 'spring-core',
+    c.description       = 'Spring Framework URL Parsing SSRF and Open Redirect. ' +
+                          'Applications that parse user-provided URLs using UriComponentsBuilder ' +
+                          'may be vulnerable to Server-Side Request Forgery or Open Redirect.',
+    c.cvssScore         = 8.8,
+    c.epssScore         = 0.124,
+    c.severity          = 'HIGH',
+    c.exploitedInWild   = false,
+    c.cisaKev           = false,
+    c.affectedVersions  = '<6.1.4,<6.0.17',
+    c.patchedVersion    = '6.1.4',
+    c.publishedDate     = '2024-02-22';
+
+// ── CVE-2023-44487 — HTTP/2 Rapid Reset DDoS (netty-codec-http2) ──────────
+MERGE (c:CVE {id: 'CVE-2023-44487'})
+SET c.affectedPackage   = 'netty-codec-http2',
+    c.description       = 'HTTP/2 Rapid Reset DDoS vulnerability. ' +
+                          'Allows a malicious client to exhaust server resources by repeatedly ' +
+                          'opening stream requests and immediately resetting them.',
+    c.cvssScore         = 7.5,
+    c.epssScore         = 0.915,
+    c.severity          = 'HIGH',
+    c.exploitedInWild   = true,
+    c.cisaKev           = true,
+    c.affectedVersions  = '<4.1.100.Final',
+    c.patchedVersion    = '4.1.100.Final',
+    c.publishedDate     = '2023-10-10';
+
+// ── CVE-2021-31805 — Apache Struts OGNL RCE (struts2-core) ────────────────
+MERGE (c:CVE {id: 'CVE-2021-31805'})
+SET c.affectedPackage   = 'struts2-core',
+    c.description       = 'Apache Struts OGNL remote code execution. ' +
+                          'A double evaluation of OGNL expressions inside tags can lead to ' +
+                          'remote command execution when developer inputs are not properly sanitized.',
+    c.cvssScore         = 9.8,
+    c.epssScore         = 0.812,
+    c.severity          = 'CRITICAL',
+    c.exploitedInWild   = true,
+    c.cisaKev           = true,
+    c.affectedVersions  = '<2.5.30',
+    c.patchedVersion    = '2.5.30',
+    c.publishedDate     = '2022-04-12';
+
+// ── CVE-2023-38545 — curl SOCKS5 Heap Overflow (curl) ─────────────────────
+MERGE (c:CVE {id: 'CVE-2023-38545'})
+SET c.affectedPackage   = 'curl',
+    c.description       = 'curl SOCKS5 handshake heap buffer overflow. ' +
+                          'A vulnerability in the SOCKS5 handshake protocol allows remote attackers ' +
+                          'to execute arbitrary code or cause a denial of service.',
+    c.cvssScore         = 9.8,
+    c.epssScore         = 0.954,
+    c.severity          = 'CRITICAL',
+    c.exploitedInWild   = false,
+    c.cisaKev           = false,
+    c.affectedVersions  = '7.69.0-8.3.0',
+    c.patchedVersion    = '8.4.0',
+    c.publishedDate     = '2023-10-11';
+
+// ── CVE-2023-22515 — Confluence Privilege Escalation (confluence-server) ──
+MERGE (c:CVE {id: 'CVE-2023-22515'})
+SET c.affectedPackage   = 'confluence-server',
+    c.description       = 'Atlassian Confluence Server privilege escalation. ' +
+                          'Allows a remote unauthenticated attacker to inject administrative privileges ' +
+                          'and take full control of the Confluence server instance.',
+    c.cvssScore         = 10.0,
+    c.epssScore         = 0.963,
+    c.severity          = 'CRITICAL',
+    c.exploitedInWild   = true,
+    c.cisaKev           = true,
+    c.affectedVersions  = '<8.5.2',
+    c.patchedVersion    = '8.5.2',
+    c.publishedDate     = '2023-10-04';

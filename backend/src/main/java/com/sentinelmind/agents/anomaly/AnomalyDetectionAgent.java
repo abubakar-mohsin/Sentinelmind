@@ -210,7 +210,7 @@ public class AnomalyDetectionAgent implements ISecurityAgent {
                 "MATCH (u:User {email: $email}) " +
                 "RETURN u.avgLoginHour as avgHour, u.stdDevLoginHour as stdHour, " +
                 "       u.avgLatencyMs as avgLatency, u.stdDevLatencyMs as stdLatency, " +
-                "       u.baselineLoginCount as loginCount";
+                "       coalesce(u.sessionCount, 245) as loginCount";
 
             List<Map<String, Object>> results = graphService.query(readQuery,
                 Map.of("email", event.getActor() != null ? event.getActor() : ""));
@@ -239,12 +239,12 @@ public class AnomalyDetectionAgent implements ISecurityAgent {
 
             String updateQuery =
                 "MATCH (u:User {email: $email}) " +
-                "SET u.avgLoginHour        = $avgHour, " +
-                "    u.stdDevLoginHour     = $stdHour, " +
-                "    u.avgLatencyMs        = $avgLatency, " +
-                "    u.stdDevLatencyMs     = $stdLatency, " +
-                "    u.baselineLoginCount  = $loginCount, " +
-                "    u.lastBaselineUpdate  = $now";
+                "SET u.avgLoginHour    = $avgHour, " +
+                "    u.stdDevLoginHour = $stdHour, " +
+                "    u.avgLatencyMs    = $avgLatency, " +
+                "    u.stdDevLatencyMs = $stdLatency, " +
+                "    u.sessionCount    = $loginCount, " +
+                "    u.lastBaselineUpdate = $now";
 
             graphService.execute(updateQuery, Map.of(
                 "email",      event.getActor(),

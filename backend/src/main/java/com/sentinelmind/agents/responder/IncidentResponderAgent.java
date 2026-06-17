@@ -3,6 +3,8 @@ package com.sentinelmind.agents.responder;
 import com.sentinelmind.agents.ISecurityAgent;
 import com.sentinelmind.audit.AuditActionRepository;
 import com.sentinelmind.audit.AuditEntry;
+import com.sentinelmind.audit.Incident;
+import com.sentinelmind.audit.IncidentRepository;
 import com.sentinelmind.graph.KnowledgeGraphService;
 import com.sentinelmind.messaging.EventProducer;
 import com.sentinelmind.messaging.KafkaTopics;
@@ -38,13 +40,16 @@ public class IncidentResponderAgent implements ISecurityAgent {
     private final AuditActionRepository auditRepo;
     private final EventProducer         eventProducer;
     private final KnowledgeGraphService graphService;
+    private final IncidentRepository    incidentRepo;
 
     public IncidentResponderAgent(AuditActionRepository auditRepo,
                                   EventProducer eventProducer,
-                                  KnowledgeGraphService graphService) {
+                                  KnowledgeGraphService graphService,
+                                  IncidentRepository incidentRepo) {
         this.auditRepo      = auditRepo;
         this.eventProducer  = eventProducer;
         this.graphService   = graphService;
+        this.incidentRepo   = incidentRepo;
     }
 
     @Override
@@ -78,7 +83,6 @@ public class IncidentResponderAgent implements ISecurityAgent {
         for (ResponseCommand command : playbook) {
             command.execute();
 
-            // Save to PostgreSQL audit trail
             AuditEntry entry = AuditEntry.builder()
                     .incidentId(UUID.fromString(incidentId))  // Bug 2 fix: was broken UUID logic
                     .actionType(command.getClass().getSimpleName())
@@ -86,7 +90,7 @@ public class IncidentResponderAgent implements ISecurityAgent {
                     .executedBy("IncidentResponderAgent")
                     .build();
             try {
-                auditRepo.save(entry);
+                auditRepo.save(java.util.Objects.requireNonNull(entry));
             } catch (Exception e) {
                 log.warn("[RESPONDER] Could not persist audit entry (DB may not be up): {}", e.getMessage());
             }
@@ -110,6 +114,20 @@ public class IncidentResponderAgent implements ISecurityAgent {
                 graphService.markIpBlocked(event.getSourceIp());
             }
             graphService.markIncidentContained(incidentId);
+
+            // Update PostgreSQL Incident status to CONTAINED
+            try {
+                UUID uuid = UUID.fromString(incidentId);
+                incidentRepo.findById(uuid).ifPresent(incident -> {
+                    incident.setStatus("CONTAINED");
+                    incident.setContainedAt(java.time.LocalDateTime.now());
+                    incidentRepo.save(incident);
+                    log.info("[RESPONDER] Updated incident status to CONTAINED in PostgreSQL");
+                });
+            } catch (Exception dbEx) {
+                log.warn("[RESPONDER] Could not update incident status in PostgreSQL: {}", dbEx.getMessage());
+            }
+
             eventProducer.publishResponse(WebSocketMessage.graphUpdated(
                 incidentId, "INCIDENT_CONTAINED",
                 List.of(), // no new nodes

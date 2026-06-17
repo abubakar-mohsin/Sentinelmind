@@ -11,7 +11,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * MetricsController — Real-time platform metrics API.
@@ -25,10 +24,18 @@ public class MetricsController {
     private static final Logger log = LoggerFactory.getLogger(MetricsController.class);
     private final IncidentRepository incidentRepository;
 
-    private static final Map<String, Long> agentActivationTimes = new ConcurrentHashMap<>();
     private static final List<Long> detectionLatencies = Collections.synchronizedList(new ArrayList<>());
+    private static final List<Boolean> falsePositiveSamples = Collections.synchronizedList(new ArrayList<>());
     private static long totalEventsProcessed = 0;
     private static final long startTime = System.currentTimeMillis();
+
+    static {
+        // Seed some mock samples for a realistic starting false positive rate of ~2.5%
+        for (int i = 0; i < 40; i++) {
+            falsePositiveSamples.add(i == 12);
+        }
+        totalEventsProcessed = 40;
+    }
 
     public MetricsController(IncidentRepository incidentRepository) {
         this.incidentRepository = incidentRepository;
@@ -36,9 +43,16 @@ public class MetricsController {
 
     public static void recordDetection(long latencyMs) {
         detectionLatencies.add(latencyMs);
-        totalEventsProcessed++;
         if (detectionLatencies.size() > 100) {
             detectionLatencies.remove(0);
+        }
+    }
+
+    public static void recordEvent(boolean isFalsePositive) {
+        falsePositiveSamples.add(isFalsePositive);
+        totalEventsProcessed++;
+        if (falsePositiveSamples.size() > 100) {
+            falsePositiveSamples.remove(0);
         }
     }
 
@@ -94,6 +108,17 @@ public class MetricsController {
             agentStatus.put("DependencyScanner", "ACTIVE");
             metrics.put("agentStatus", agentStatus);
             metrics.put("activeAgents", agentStatus.size());
+            metrics.put("agentsOnline", agentStatus.size());
+            metrics.put("systemStatus", "OPERATIONAL");
+
+            double fpRate = 0.0;
+            synchronized (falsePositiveSamples) {
+                if (!falsePositiveSamples.isEmpty()) {
+                    long fpCount = falsePositiveSamples.stream().filter(b -> b).count();
+                    fpRate = (double) fpCount / falsePositiveSamples.size() * 100.0;
+                }
+            }
+            metrics.put("falsePositiveRate", Math.round(fpRate * 10.0) / 10.0);
 
             metrics.put("confidenceThreshold", 0.92);
             metrics.put("currentMode", "mock");

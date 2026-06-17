@@ -241,11 +241,10 @@ public class OrchestratorAgent {
         wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "AnomalyDetectionAgent"));
 
         AgentFactory.AgentRegistration anomalyReg = agentFactory.getAgent("ANOMALY");
-        eventProducer.publishToAgent(anomalyReg.kafkaTopic(), event);
+        eventProducer.publishToAgent(java.util.Objects.requireNonNull(anomalyReg.kafkaTopic()), event);
         Finding anomalyFinding = waitForFinding(anomalyQueue, "AnomalyDetectionAgent", 5);
 
         wsGateway.broadcast(WebSocketMessage.findingCreated(incidentId, anomalyFinding));
-        handlerChain.handle(anomalyFinding);
 
         // Feed to Builder
         reportBuilder.anomalyScore(anomalyFinding.getZScore())
@@ -256,6 +255,7 @@ public class OrchestratorAgent {
 
         if (anomalyFinding.getSeverityLevel() < AbstractEventHandler.MEDIUM) {
             log.info("[ORCHESTRATOR] Anomaly LOW — not escalating further");
+            MetricsController.recordEvent(false);
             return;
         }
 
@@ -307,11 +307,10 @@ public class OrchestratorAgent {
         wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "ThreatIntelAgent"));
 
         AgentFactory.AgentRegistration intelReg = agentFactory.getAgent("THREAT_INTEL");
-        eventProducer.publishToAgent(intelReg.kafkaTopic(), event);
+        eventProducer.publishToAgent(java.util.Objects.requireNonNull(intelReg.kafkaTopic()), event);
         Finding threatFinding = waitForFinding(threatIntelQueue, "ThreatIntelAgent", 5);
 
         wsGateway.broadcast(WebSocketMessage.findingCreated(incidentId, threatFinding));
-        handlerChain.handle(threatFinding);
 
         // Feed to Builder
         reportBuilder.threatIntelResult(threatFinding.getSummary())
@@ -389,7 +388,7 @@ public class OrchestratorAgent {
         wsGateway.broadcast(WebSocketMessage.agentActivated(incidentId, "ThreatClassifierAgent"));
 
         AgentFactory.AgentRegistration classifierReg = agentFactory.getAgent("CLASSIFIER");
-        eventProducer.publishToAgent(classifierReg.kafkaTopic(), event);
+        eventProducer.publishToAgent(java.util.Objects.requireNonNull(classifierReg.kafkaTopic()), event);
         Finding classifierFinding = waitForFinding(classifierQueue, "ThreatClassifierAgent", 5);
 
         wsGateway.broadcast(WebSocketMessage.findingCreated(incidentId, classifierFinding));
@@ -445,14 +444,32 @@ public class OrchestratorAgent {
         log.info("[ORCHESTRATOR] Confidence={} threshold={} severity={}",
                 String.format("%.3f", confidence), confidenceThreshold, finalSeverity);
 
-        wsGateway.broadcast(WebSocketMessage.incidentClassified(
-                incidentId, finalSeverity, confidence, mitreIds, mitreNames, event.getActor(), event.getSourceIp()));
-
         // ═══════════════════════════════════════════════
         // Build the final immutable IncidentReport and persist to PostgreSQL
         // ═══════════════════════════════════════════════
         IncidentReport report = reportBuilder.build();
         saveIncident(report);
+
+        wsGateway.broadcast(WebSocketMessage.incidentClassified(
+                incidentId, finalSeverity, confidence, mitreIds, mitreNames, event.getActor(), event.getSourceIp(), report.getReason()));
+
+        // ═══════════════════════════════════════════════
+        // Run the Chain of Responsibility once with the final finding
+        // ═══════════════════════════════════════════════
+        try {
+            Finding finalFinding = Finding.builder()
+                    .agentName("OrchestratorAgent")
+                    .severity(finalSeverity)
+                    .confidence(confidence)
+                    .sourceIp(event.getSourceIp())
+                    .actor(event.getActor())
+                    .mitreIds(mitreIds)
+                    .summary(report.getReason())
+                    .build();
+            handlerChain.handle(finalFinding);
+        } catch (Exception e) {
+            log.warn("[ORCHESTRATOR] Severity handler chain execution failed: {}", e.getMessage());
+        }
 
         // ═══════════════════════════════════════════════
         // Campaign Correlation — link incidents sharing the same MITRE technique
@@ -474,7 +491,13 @@ public class OrchestratorAgent {
             event.setIncidentId(incidentId);
 
             AgentFactory.AgentRegistration responderReg = agentFactory.getAgent("RESPONDER");
-            eventProducer.publishToAgent(responderReg.kafkaTopic(), event);
+            eventProducer.publishToAgent(java.util.Objects.requireNonNull(responderReg.kafkaTopic()), event);
+
+            try {
+                MetricsController.recordEvent(false); // True Positive Incident
+            } catch (Exception e) {
+                log.warn("[ORCHESTRATOR] Failed to record event metric: {}", e.getMessage());
+            }
 
         } else {
             log.info("[ORCHESTRATOR] Confidence below threshold — flagging for human review");
@@ -484,6 +507,11 @@ public class OrchestratorAgent {
                 anomalyDetectionAgent.updateBaseline(event);
             } catch (Exception e) {
                 log.warn("[ORCHESTRATOR] Baseline update failed (non-critical): {}", e.getMessage());
+            }
+            try {
+                MetricsController.recordEvent(true); // False Positive
+            } catch (Exception e) {
+                log.warn("[ORCHESTRATOR] Failed to record event metric: {}", e.getMessage());
             }
         }
 
@@ -530,6 +558,7 @@ public class OrchestratorAgent {
                 return "CONTINUE";
             }
 
+            @SuppressWarnings("deprecation")
             ObjectMapper mapper = new ObjectMapper()
                     .configure(com.fasterxml.jackson.core.JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true);
             JsonNode root = mapper.readTree(clean.substring(start, end));
@@ -660,7 +689,7 @@ public class OrchestratorAgent {
                     .reason(report.getReason())
                     .status("OPEN")
                     .build();
-            incidentRepo.save(inc);
+            incidentRepo.save(java.util.Objects.requireNonNull(inc));
             log.info("[ORCHESTRATOR] Incident persisted to PostgreSQL id={}", report.getIncidentId());
         } catch (Exception e) {
             log.warn("[ORCHESTRATOR] Could not persist incident (DB may not be up): {}", e.getMessage());
@@ -676,15 +705,18 @@ public class OrchestratorAgent {
     private void correlateCampaign(String incidentId, String sourceIp, List<String> mitreIds) {
         if (mitreIds.isEmpty()) return;
 
+        long cutoff = System.currentTimeMillis() - (72L * 60 * 60 * 1000); // 72 hours ago
+
         // Find other incidents in the last 72h sharing a MITRE technique
         List<Map<String, Object>> related = graphService.query(
             "MATCH (i:Incident)-[:USES_TECHNIQUE]->(t:AttackTechnique) " +
             "WHERE t.id IN $mitreIds " +
             "  AND i.id <> $incidentId " +
+            "  AND i.detectedAt > $cutoff " +
             "WITH i, collect(t.id) AS sharedTechniques " +
             "RETURN i.id AS relatedId, i.severity AS severity, sharedTechniques " +
             "LIMIT 10",
-            Map.of("mitreIds", mitreIds, "incidentId", incidentId)
+            Map.of("mitreIds", mitreIds, "incidentId", incidentId, "cutoff", cutoff)
         );
 
         if (related.isEmpty()) return;

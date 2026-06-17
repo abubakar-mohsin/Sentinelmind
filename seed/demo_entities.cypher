@@ -61,6 +61,9 @@ MATCH (ta:ThreatActor {id:'ta-tor-infra'}), (ip:IP {address:'185.220.101.47'})  
 MATCH (u:User {email:'ahmed@targetcorp.com'}), (ip:IP {address:'185.220.101.47'}) CREATE (ip)-[:TARGETS]->(u);
 MATCH (ip:IP {address:'185.220.101.47'}), (s:Service {id:'svc-auth'}) CREATE (ip)-[:COMMUNICATES_WITH]->(s);
 
+// Lateral movement path
+MATCH (u:User {email:'ahmed@targetcorp.com'}), (a:Asset {id:'asset-payroll'}) CREATE (u)-[:LATERAL_MOVE_TO]->(a);
+
 // ─── CVE data for VulnerabilityScannerAgent ───────────────────────────────────
 // Package nodes + CVE nodes connected by AFFECTED_BY relationships.
 // EPSS score = probability this CVE is actively exploited in the wild (0–1).

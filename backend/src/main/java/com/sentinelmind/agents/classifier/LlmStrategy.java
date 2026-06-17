@@ -68,6 +68,7 @@ public class LlmStrategy implements ClassificationStrategy {
     private final GroqClient groqClient;
     private final RuleBasedStrategy fallback;
     private final WebSocketGateway wsGateway;
+    @SuppressWarnings("deprecation")
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(com.fasterxml.jackson.core.JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true);
 
