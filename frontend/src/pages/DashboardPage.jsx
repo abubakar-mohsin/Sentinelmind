@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useWebSocket }    from '../ws/useWebSocket';
 import Sidebar             from '../components/layout/Sidebar';
-import DashboardHeader     from '../components/layout/DashboardHeader';
 import AgentPipeline       from '../components/AgentPipeline';
 import AIReasoningPanel    from '../components/AIReasoningPanel';
 import ForensicsTimeline   from '../components/ForensicsTimeline';
@@ -11,8 +10,6 @@ import ThreatMatrix        from '../components/ThreatMatrix';
 import ResponseLog         from '../components/ResponseLog';
 import AlertQueue          from '../components/AlertQueue';
 import TopologyMap         from '../components/TopologyMap';
-
-/* ── Initial state shapes ───────────────────────── */
 
 const INITIAL_AGENTS = {
   AnomalyDetectionAgent:  { status: 'IDLE', summary: null, elapsed: null, startTime: null },
@@ -28,8 +25,6 @@ const INITIAL_METRICS = {
   actionsExecuted: null,
 };
 
-/* ── Stat card ──────────────────────────────────── */
-
 function StatCard({ label, value, unit = '', sub, color }) {
   return (
     <div className="stat-card">
@@ -42,7 +37,37 @@ function StatCard({ label, value, unit = '', sub, color }) {
   );
 }
 
-/* ── DashboardPage ──────────────────────────────── */
+function ElapsedTimer({ startTime, stopped }) {
+  const [elapsed, setElapsed] = useState(0);
+  const frozenRef = useRef(null);
+
+  useEffect(() => {
+    if (!startTime) { setElapsed(0); frozenRef.current = null; return; }
+    if (stopped && frozenRef.current === null) {
+      frozenRef.current = Date.now() - startTime;
+      setElapsed(frozenRef.current);
+      return;
+    }
+    if (frozenRef.current !== null) return;
+    const iv = setInterval(() => setElapsed(Date.now() - startTime), 100);
+    return () => clearInterval(iv);
+  }, [startTime, stopped]);
+
+  if (!startTime) return null;
+
+  const secs = (elapsed / 1000).toFixed(1);
+  return (
+    <span style={{
+      fontFamily: 'var(--font-mono)',
+      fontSize: 13,
+      fontWeight: 600,
+      color: stopped ? 'var(--success)' : 'var(--danger)',
+      fontVariantNumeric: 'tabular-nums',
+    }}>
+      {secs}s
+    </span>
+  );
+}
 
 export default function DashboardPage() {
   const [activePage,     setActivePage]     = useState('overview');
@@ -59,12 +84,13 @@ export default function DashboardPage() {
   const [baseline,       setBaseline]       = useState(null);
   const [currentActor,   setCurrentActor]   = useState('ahmed@targetcorp.com');
   const [graphEvents,    setGraphEvents]    = useState([]);
+  const [graphNodes,     setGraphNodes]     = useState([]);
+  const [graphEdges,     setGraphEdges]     = useState([]);
 
   const currentIdRef    = useRef(null);
   const activatedAtRef  = useRef(null);
   const classifiedAtRef = useRef(null);
 
-  /* ── Baseline fetcher ── */
   useEffect(() => {
     async function fetchBaseline() {
       try {
@@ -72,18 +98,13 @@ export default function DashboardPage() {
         const headers = new Headers();
         headers.set('Authorization', 'Basic ' + btoa('admin:sentinelmind'));
         const res = await fetch(`${API_BASE}/api/baseline/${currentActor}`, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          setBaseline(data);
-        }
+        if (res.ok) setBaseline(await res.json());
       } catch (err) {
         console.error('Failed to fetch baseline:', err);
       }
     }
     fetchBaseline();
-  }, [currentActor, contained]); // Re-fetch when contained (attack finishes) so we see updates if it was normal
-
-  /* ── Message processor ── */
+  }, [currentActor, contained]);
 
   const handleMessage = useCallback((msg) => {
     if (msg.incidentId && msg.incidentId !== currentIdRef.current) {
@@ -99,14 +120,14 @@ export default function DashboardPage() {
       setClassifiedData(null);
       setMetrics(INITIAL_METRICS);
       setReasoningSteps([]);
+      setGraphEvents([]);
+      setGraphNodes([]);
+      setGraphEdges([]);
     }
 
     switch (msg.type) {
       case 'AGENT_ACTIVATED':
-        if (msg.agentName === 'OrchestratorAgent') {
-          setReasoningSteps([]);
-          break;
-        }
+        if (msg.agentName === 'OrchestratorAgent') { setReasoningSteps([]); break; }
         setAgentStates(prev => ({
           ...prev,
           [msg.agentName]: { status: 'RUNNING', summary: null, elapsed: null, startTime: Date.now() },
@@ -129,16 +150,13 @@ export default function DashboardPage() {
         setAgentStates(prev => {
           const a = prev[msg.agentName];
           if (!a) return prev;
-          // For ThreatIntelAgent, also store usedRealApi and isMalicious so
-          // AgentPipeline can show the VIRUSTOTAL LIVE / MOCK DATA badge.
           const extra = msg.agentName === 'ThreatIntelAgent'
             ? { usedRealApi: msg.usedRealApi, isMalicious: msg.confidence > 0 }
             : {};
           return {
             ...prev,
             [msg.agentName]: {
-              ...a,
-              status:  'COMPLETE',
+              ...a, status: 'COMPLETE',
               summary: msg.summary || msg.message,
               elapsed: a.startTime ? Date.now() - a.startTime : null,
               ...extra,
@@ -148,18 +166,12 @@ export default function DashboardPage() {
         break;
 
       case 'CONFIDENCE_UPDATED':
-        setMetrics(prev => ({
-          ...prev,
-          confidence: msg.confidence,
-        }));
+        setMetrics(prev => ({ ...prev, confidence: msg.confidence }));
         break;
 
       case 'INCIDENT_CLASSIFIED':
-        if (msg.actor) {
-          setCurrentActor(msg.actor);
-        } else if (msg.triggeringEvent && msg.triggeringEvent.actor) {
-          setCurrentActor(msg.triggeringEvent.actor);
-        }
+        if (msg.actor) setCurrentActor(msg.actor);
+        else if (msg.triggeringEvent?.actor) setCurrentActor(msg.triggeringEvent.actor);
         classifiedAtRef.current = Date.now();
         setClassifiedData(msg);
         setThreatLevel(msg.severity === 'CRITICAL' ? 'CRITICAL' : 'ELEVATED');
@@ -189,8 +201,8 @@ export default function DashboardPage() {
           ...prev,
           IncidentResponderAgent: {
             ...prev.IncidentResponderAgent,
-            status:  'COMPLETE',
-            summary: `Playbook complete - ${msg.actionsExecuted} action${msg.actionsExecuted !== 1 ? 's' : ''} in ${msg.totalElapsedMs}ms`,
+            status: 'COMPLETE',
+            summary: `Playbook complete — ${msg.actionsExecuted} action${msg.actionsExecuted !== 1 ? 's' : ''} in ${msg.totalElapsedMs}ms`,
             elapsed: msg.totalElapsedMs,
           },
         }));
@@ -198,6 +210,8 @@ export default function DashboardPage() {
 
       case 'GRAPH_UPDATED':
         setGraphEvents(prev => [...prev, msg]);
+        if (msg.details?.newNodes) setGraphNodes(prev => [...prev, ...msg.details.newNodes]);
+        if (msg.details?.newEdges) setGraphEdges(prev => [...prev, ...msg.details.newEdges]);
         break;
 
       default: break;
@@ -205,15 +219,6 @@ export default function DashboardPage() {
   }, []);
 
   const { connected } = useWebSocket(handleMessage);
-
-  /* ── Helpers ── */
-
-  function fmt(ms) {
-    if (ms == null) return null;
-    return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
-  }
-
-  /* ── Render ── */
 
   return (
     <div className="app-shell">
@@ -226,24 +231,37 @@ export default function DashboardPage() {
       />
 
       <div className="main-content">
-        <DashboardHeader
-          activePage={activePage}
-          incidentActive={incidentActive}
-        />
+        {/* 3px threat bar */}
+        <div className={`threat-bar ${incidentActive ? 'active' : ''} ${contained ? 'contained' : ''}`} />
+
+        {/* Status strip during incident */}
+        <div className={`status-strip ${incidentActive || contained ? 'visible' : ''} ${contained ? 'contained' : ''}`}>
+          <div className="status-strip-inner">
+            {contained ? (
+              <>
+                INCIDENT CONTAINED
+                <span style={{ opacity: 0.7 }}>|</span>
+                <ElapsedTimer startTime={activatedAtRef.current} stopped />
+                <span style={{ opacity: 0.7 }}>|</span>
+                {metrics.actionsExecuted} actions executed
+              </>
+            ) : (
+              <>
+                THREAT DETECTED
+                <span style={{ opacity: 0.7 }}>|</span>
+                <ElapsedTimer startTime={activatedAtRef.current} stopped={false} />
+                <span style={{ opacity: 0.7 }}>|</span>
+                {classifiedData?.severity || 'ANALYZING'}
+              </>
+            )}
+          </div>
+        </div>
 
         <div className="page-content">
-          {baseline && (
-            <div style={{ padding: '12px 20px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
-              <span style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                <strong>User Baseline ({currentActor}):</strong> {baseline.sessionCount} sessions analyzed. Typical login: {baseline.typicalCountry}, {String(Math.max(0, Math.floor(baseline.avgLoginHour - 1))).padStart(2, '0')}:00-{String(Math.min(23, Math.floor(baseline.avgLoginHour + 8))).padStart(2, '0')}:00, avg latency {(baseline.avgLatencyMs / 1000).toFixed(1)}s.
-              </span>
-            </div>
-          )}
           {activePage === 'forensics' ? (
             <ForensicsTimeline incidentId={currentId} />
           ) : activePage === 'threat-graph' ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <ThreatGraph
                 graphEvents={graphEvents}
                 incidentId={currentId}
@@ -251,27 +269,46 @@ export default function DashboardPage() {
                 contained={contained}
                 currentActor={currentActor}
               />
-              <GraphInsights
-                graphNodes={[]}
-                graphEdges={[]}
-              />
+              <GraphInsights graphNodes={graphNodes} graphEdges={graphEdges} />
             </div>
           ) : (
             <>
-              {/* Stats row */}
+              {baseline && (
+                <div style={{
+                  padding: '10px 16px',
+                  background: 'var(--accent-dim)',
+                  border: '1px solid rgba(99,102,241,0.15)',
+                  borderRadius: 8,
+                  marginBottom: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  fontSize: 12,
+                  color: 'var(--text-2)',
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+                  <span>
+                    <strong style={{ color: 'var(--text-1)' }}>Baseline ({currentActor})</strong>
+                    <span style={{ fontFamily: 'var(--font-mono)', marginLeft: 8 }}>
+                      {baseline.sessionCount} sessions | {baseline.typicalCountry} | avg {(baseline.avgLatencyMs / 1000).toFixed(1)}s
+                    </span>
+                  </span>
+                </div>
+              )}
+
               <div className="stats-row">
                 <StatCard
                   label="Active Threats"
                   value={incidentActive ? 1 : contained ? 0 : null}
                   color={incidentActive ? 'var(--danger)' : contained ? 'var(--success)' : undefined}
-                  sub={incidentActive ? 'Investigating…' : contained ? 'Contained' : 'No active threats'}
+                  sub={incidentActive ? 'Investigating' : contained ? 'Contained' : 'No active threats'}
                 />
                 <StatCard
                   label="Detection Time"
                   value={metrics.detectionMs != null ? (metrics.detectionMs / 1000).toFixed(1) : null}
                   unit="s"
-                  color={metrics.detectionMs != null ? 'var(--info)' : undefined}
-                  sub="From event to classification"
+                  color={metrics.detectionMs != null ? 'var(--accent)' : undefined}
+                  sub="Event to classification"
                 />
                 <StatCard
                   label="AI Confidence"
@@ -288,17 +325,15 @@ export default function DashboardPage() {
                 />
               </div>
 
-              {/* Main grid: pipeline + threat matrix */}
               <div className="dashboard-main">
                 <AgentPipeline agentStates={agentStates} />
-                <ThreatMatrix  classifiedData={classifiedData} />
+                <ThreatMatrix classifiedData={classifiedData} />
               </div>
 
               <AIReasoningPanel reasoningSteps={reasoningSteps} incidentActive={incidentActive} contained={contained} />
 
-              {/* Bottom grid: alerts + response log + topology */}
               <div className="dashboard-bottom">
-                <AlertQueue  incidents={incidents} />
+                <AlertQueue incidents={incidents} />
                 <ResponseLog responses={responses} />
                 <TopologyMap attackActive={incidentActive} contained={contained} />
               </div>

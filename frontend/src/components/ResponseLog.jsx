@@ -9,12 +9,12 @@ function fmtTime(ts) {
 }
 
 function actionConfig(type) {
-  if (!type) return { color: 'var(--brand)', bg: 'var(--brand-dim)', icon: '●' };
+  if (!type) return { color: 'var(--accent)', bg: 'var(--accent-dim)', icon: '●' };
   const t = type.toUpperCase();
   if (t.includes('BLOCK'))  return { color: 'var(--danger)',  bg: 'var(--danger-bg)',  icon: '✕' };
   if (t.includes('REVOKE')) return { color: 'var(--warning)', bg: 'var(--warning-bg)', icon: '⊘' };
   if (t.includes('FORCE') || t.includes('RESET')) return { color: '#FB923C', bg: 'rgba(251,146,60,0.1)', icon: '⟳' };
-  return { color: 'var(--info)', bg: 'var(--info-bg)', icon: '↑' };
+  return { color: 'var(--accent)', bg: 'var(--accent-dim)', icon: '↑' };
 }
 
 function ContainedEntry({ entry }) {

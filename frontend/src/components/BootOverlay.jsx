@@ -1,34 +1,30 @@
 import React, { useState, useEffect } from 'react';
 
 const BOOT_LINES = [
-  { text: '> SENTINELMIND v1.0.0  //  AUTONOMOUS THREAT DETECTION PLATFORM', color: '#00F5FF', delay: 0 },
-  { text: '> Loading MITRE ATT&CK framework...............................[OK]', color: '#8892A4', delay: 180 },
-  { text: '> Establishing Kafka event bus...................................[OK]', color: '#8892A4', delay: 340 },
-  { text: '> Connecting Neo4j knowledge graph...............................[OK]', color: '#8892A4', delay: 500 },
-  { text: '> PostgreSQL audit trail.........................................[OK]', color: '#8892A4', delay: 650 },
-  { text: '> WebSocket gateway..............................................[ONLINE]', color: '#8892A4', delay: 790 },
-  { text: '> Spawning agents: ANOMALY-1  INTEL-1  CLASS-1  RESP-1', color: '#8892A4', delay: 930 },
-  { text: '> Confidence threshold set to 0.92', color: '#8892A4', delay: 1060 },
-  { text: '> ALL SYSTEMS NOMINAL  //  AWAITING THREAT INPUT', color: '#00FF88', delay: 1220 },
+  { text: 'Loading MITRE ATT&CK framework',       delay: 0 },
+  { text: 'Establishing Kafka event bus',           delay: 200 },
+  { text: 'Connecting Neo4j knowledge graph',       delay: 380 },
+  { text: 'PostgreSQL audit trail ready',           delay: 540 },
+  { text: 'WebSocket gateway online',               delay: 680 },
+  { text: 'Spawning agents: 4 registered',          delay: 820 },
+  { text: 'Confidence threshold: 0.92',             delay: 940 },
+  { text: 'All systems nominal',                    delay: 1100 },
 ];
 
 export default function BootOverlay({ onComplete }) {
-  const [visible, setVisible]   = useState([]);
-  const [fading,  setFading]    = useState(false);
-  const [cursor,  setCursor]    = useState(true);
+  const [visible, setVisible] = useState([]);
+  const [fading,  setFading]  = useState(false);
 
   useEffect(() => {
     const timers = BOOT_LINES.map((line, i) =>
       setTimeout(() => setVisible(prev => [...prev, i]), line.delay)
     );
 
-    const cursorTimer  = setInterval(() => setCursor(c => !c), 530);
-    const fadeTimer    = setTimeout(() => setFading(true),  1700);
-    const doneTimer    = setTimeout(onComplete,             2200);
+    const fadeTimer = setTimeout(() => setFading(true), 1600);
+    const doneTimer = setTimeout(onComplete,           2100);
 
     return () => {
       timers.forEach(clearTimeout);
-      clearInterval(cursorTimer);
       clearTimeout(fadeTimer);
       clearTimeout(doneTimer);
     };
@@ -38,61 +34,44 @@ export default function BootOverlay({ onComplete }) {
     <div style={{
       position: 'fixed',
       inset: 0,
-      background: '#080B0F',
+      background: '#0a0a0a',
       zIndex: 10000,
       display: 'flex',
+      flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
+      gap: 24,
       opacity: fading ? 0 : 1,
       transition: 'opacity 0.5s ease',
     }}>
-      {/* Scanlines on boot screen too */}
       <div style={{
-        position: 'absolute', inset: 0,
-        background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.032) 2px, rgba(0,0,0,0.032) 3px)',
-        pointerEvents: 'none',
-      }} />
-
-      <div style={{
-        width: 580,
-        padding: '0 24px',
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: "'Inter', system-ui, sans-serif",
+        fontSize: 18,
+        fontWeight: 600,
+        color: '#fafafa',
+        letterSpacing: '-0.01em',
       }}>
-        <div style={{
-          fontSize: 10,
-          letterSpacing: '0.20em',
-          color: '#00F5FF',
-          marginBottom: 20,
-          textTransform: 'uppercase',
-        }}>
-          ◈ SYSTEM INITIALIZATION  //  SECURE ENCLAVE ACTIVE
-        </div>
+        SENTINELMIND
+      </div>
 
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 3,
+        alignItems: 'center',
+      }}>
         {BOOT_LINES.map((line, i) => (
           visible.includes(i) ? (
             <div key={i} style={{
-              color: line.color,
-              fontSize: 12,
-              lineHeight: '26px',
-              animation: 'sweep-in 0.12s ease forwards',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 11,
+              color: i === BOOT_LINES.length - 1 ? '#22c55e' : '#71717a',
+              animation: 'fade-in 0.15s ease forwards',
             }}>
               {line.text}
             </div>
           ) : null
         ))}
-
-        {visible.length === BOOT_LINES.length && (
-          <div style={{
-            color: '#00F5FF',
-            fontSize: 12,
-            lineHeight: '26px',
-            marginTop: 2,
-          }}>
-            {'> '}<span style={{ opacity: cursor ? 1 : 0 }}>_</span>
-          </div>
-        )}
       </div>
     </div>
   );

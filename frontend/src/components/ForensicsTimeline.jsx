@@ -54,7 +54,7 @@ export default function ForensicsTimeline({ incidentId }) {
 
   if (loading) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--brand)' }}>
+      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--accent)' }}>
         Generating Forensic Timeline using Groq AI...
       </div>
     );
@@ -81,7 +81,7 @@ export default function ForensicsTimeline({ incidentId }) {
       <div style={{ marginBottom: 32, borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
         <h2 style={{ margin: 0, color: 'var(--text-1)', fontSize: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
           INCIDENT FORENSICS
-          <span style={{ fontSize: 14, background: 'var(--brand-dim)', color: 'var(--brand)', padding: '4px 10px', borderRadius: 6, fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 14, background: 'var(--accent-dim)', color: 'var(--accent)', padding: '4px 10px', borderRadius: 6, fontFamily: 'monospace' }}>
             {incidentId.substring(0, 8)}
           </span>
         </h2>
@@ -95,7 +95,7 @@ export default function ForensicsTimeline({ incidentId }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
         <TimelineNode title="Attack Initiated" time={tl.startTime} icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" color="var(--danger)" />
         <TimelineNode title="Target / Access Attempted" body={tl.targetAccess} icon="M15 7h3a5 5 0 015 5 5 5 0 01-5 5h-3m-6 0H6a5 5 0 01-5-5 5 5 0 015-5h3m-3 5h12" color="var(--warning)" />
-        <TimelineNode title="Dwell Time" body={tl.dwellTime} icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" color="var(--info)" />
+        <TimelineNode title="Dwell Time" body={tl.dwellTime} icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" color="var(--accent)" />
         <TimelineNode title="Blast Radius" body={tl.blastRadius} icon="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" color="var(--warning)" />
         <TimelineNode title="Unmitigated Impact" body={tl.unmitigatedImpact} icon="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" color="var(--danger)" isLast />
       </div>
@@ -110,8 +110,8 @@ function TimelineNode({ title, time, body, icon, color, isLast }) {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <div style={{ 
           width: 36, height: 36, borderRadius: '50%', 
-          background: color ? `${color}20` : 'var(--brand-dim)', 
-          color: color || 'var(--brand)', 
+          background: color ? `${color}20` : 'var(--accent-dim)', 
+          color: color || 'var(--accent)', 
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0
         }}>

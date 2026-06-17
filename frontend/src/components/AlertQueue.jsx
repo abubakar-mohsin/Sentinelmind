@@ -60,9 +60,8 @@ export default function AlertQueue({ incidents }) {
                   padding: '10px 18px',
                   borderBottom: '1px solid var(--border)',
                   cursor: 'pointer',
-                  borderLeft: `3px solid ${isOpen ? 'var(--brand)' : 'transparent'}`,
-                  background: isOpen ? 'var(--brand-dim)' : 'transparent',
-                  transition: 'var(--t)',
+                  background: isOpen ? 'var(--accent-dim)' : 'transparent',
+                  transition: 'background 0.15s',
                   animation: i === 0 ? 'sweep-in 0.25s ease' : 'none',
                 }}
                 onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
@@ -78,7 +77,7 @@ export default function AlertQueue({ incidents }) {
                     {inc.severity || 'UNKNOWN'}
                   </span>
                   {pct && (
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--brand)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
                       {pct}
                     </span>
                   )}
@@ -110,7 +109,7 @@ export default function AlertQueue({ incidents }) {
                     </div>
                     {inc.mitreIds.map((id, j) => (
                       <div key={id} style={{ display: 'flex', gap: 8, fontSize: 12, marginBottom: 4 }}>
-                        <span style={{ color: 'var(--brand)', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{id}</span>
+                        <span style={{ color: 'var(--accent)', fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{id}</span>
                         <span style={{ color: 'var(--text-3)' }}>{inc.mitreNames?.[j] || ''}</span>
                       </div>
                     ))}

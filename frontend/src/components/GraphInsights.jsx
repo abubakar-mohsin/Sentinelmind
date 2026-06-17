@@ -147,7 +147,7 @@ export default function GraphInsights({ graphNodes, graphEdges }) {
 
         {loading && (
           <div style={{
-            textAlign: 'center', padding: '20px 0', color: 'var(--brand)', fontSize: 13,
+            textAlign: 'center', padding: '20px 0', color: 'var(--accent)', fontSize: 13,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           }}>
             <span className="dot-pulse-brand" style={{ width: 6, height: 6 }} />
@@ -173,8 +173,8 @@ export default function GraphInsights({ graphNodes, graphEdges }) {
                   transition: 'all 0.3s ease',
                 }}>
                   <span style={{
-                    fontSize: 11, fontWeight: 700, color: 'var(--brand)',
-                    background: 'var(--brand-dim)', borderRadius: '50%',
+                    fontSize: 11, fontWeight: 700, color: 'var(--accent)',
+                    background: 'var(--accent-dim)', borderRadius: '50%',
                     width: 22, height: 22, display: 'flex', alignItems: 'center',
                     justifyContent: 'center', flexShrink: 0, marginTop: 1,
                   }}>

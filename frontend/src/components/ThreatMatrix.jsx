@@ -6,7 +6,7 @@ const CIRC = 2 * Math.PI * R;
 function ConfidenceRing({ confidence }) {
   const pct    = confidence != null ? Math.min(confidence, 1) : 0;
   const offset = CIRC * (1 - pct);
-  const color  = pct >= 0.92 ? 'var(--success)' : pct >= 0.70 ? 'var(--warning)' : 'var(--brand)';
+  const color  = pct >= 0.92 ? 'var(--success)' : pct >= 0.70 ? 'var(--warning)' : 'var(--accent)';
   const display = confidence != null ? `${(pct * 100).toFixed(1)}%` : '—';
 
   /* 92% threshold tick */
@@ -55,12 +55,12 @@ function TechniqueChip({ id, name }) {
     <div style={{
       display: 'flex', alignItems: 'center', gap: 0,
       background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-      borderRadius: 'var(--r)', overflow: 'hidden',
+      borderRadius: 8, overflow: 'hidden',
       animation: 'sweep-in 0.25s ease',
     }}>
       <span style={{
         padding: '4px 9px', fontSize: 11.5, fontWeight: 700,
-        color: 'var(--brand)', background: 'var(--brand-dim)',
+        color: 'var(--accent)', background: 'var(--accent-dim)',
         borderRight: '1px solid var(--border)', whiteSpace: 'nowrap',
         fontFamily: 'var(--font-mono)',
       }}>
@@ -125,7 +125,7 @@ export default function ThreatMatrix({ classifiedData }) {
           <div style={{
             background: 'var(--bg-elevated)',
             border: '1px solid var(--border)',
-            borderRadius: 'var(--r)',
+            borderRadius: 8,
             padding: '10px 14px',
             animation: 'fade-in 0.3s ease',
           }}>

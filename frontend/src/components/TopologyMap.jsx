@@ -54,14 +54,14 @@ export default function TopologyMap({ attackActive, contained }) {
 
     const linkLabelStrokeSel = svg.append('g').selectAll('text').data(links).join('text')
       .attr('text-anchor', 'middle')
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '9')
       .attr('stroke', '#18181B').attr('stroke-width', 4).attr('stroke-linejoin', 'round')
       .text(d => d.label);
 
     const linkLabelSel = svg.append('g').selectAll('text').data(links).join('text')
       .attr('text-anchor', 'middle')
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '9')
       .attr('fill', '#52525B')
       .text(d => d.label);
@@ -103,27 +103,27 @@ export default function TopologyMap({ attackActive, contained }) {
 
     labelSel.append('text')
       .attr('text-anchor', 'middle')
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '9.5').attr('dy', '26')
       .attr('stroke', '#18181B').attr('stroke-width', 4).attr('stroke-linejoin', 'round')
       .text(d => d.label.length > 22 ? d.label.slice(0, 21) + '…' : d.label);
 
     labelSel.append('text')
       .attr('text-anchor', 'middle')
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '8.5').attr('dy', '38')
       .attr('stroke', '#18181B').attr('stroke-width', 4).attr('stroke-linejoin', 'round')
       .text(d => d.sublabel);
 
     labelSel.append('text')
       .attr('text-anchor', 'middle')
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '9.5').attr('fill', '#A1A1AA').attr('dy', '26')
       .text(d => d.label.length > 22 ? d.label.slice(0, 21) + '…' : d.label);
 
     labelSel.append('text')
       .attr('text-anchor', 'middle')
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '8.5').attr('fill', '#52525B').attr('dy', '38')
       .text(d => d.sublabel);
 

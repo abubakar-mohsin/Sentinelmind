@@ -239,14 +239,14 @@ export default function ThreatGraph({ graphEvents, incidentId, incidentActive, c
     // Edge labels (background stroke + foreground text)
     const edgeLabelStroke = g.append('g').selectAll('text').data(edges).join('text')
       .attr('text-anchor', 'middle')
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '8')
       .attr('stroke', '#18181B').attr('stroke-width', 3).attr('stroke-linejoin', 'round')
       .text(d => d.type.replace(/_/g, ' '));
 
     const edgeLabelSel = g.append('g').selectAll('text').data(edges).join('text')
       .attr('text-anchor', 'middle')
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '8')
       .attr('fill', d => d.isNew ? 'rgba(139,92,246,0.7)' : 'rgba(255,255,255,0.18)')
       .text(d => d.type.replace(/_/g, ' '));
@@ -306,7 +306,7 @@ export default function ThreatGraph({ graphEvents, incidentId, incidentActive, c
     labelLayer.selectAll('text.label-bg').data(nodes).join('text')
       .attr('class', 'label-bg')
       .attr('text-anchor', 'middle').attr('dy', d => getNodeConfig(d.type).r + 14)
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '9').attr('font-weight', '500')
       .attr('stroke', '#18181B').attr('stroke-width', 4).attr('stroke-linejoin', 'round')
       .text(d => {
@@ -318,7 +318,7 @@ export default function ThreatGraph({ graphEvents, incidentId, incidentActive, c
     labelLayer.selectAll('text.label-fg').data(nodes).join('text')
       .attr('class', 'label-fg')
       .attr('text-anchor', 'middle').attr('dy', d => getNodeConfig(d.type).r + 14)
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '9').attr('font-weight', '500')
       .attr('fill', d => d.isNew ? '#C4B5FD' : '#A1A1AA')
       .text(d => {
@@ -330,7 +330,7 @@ export default function ThreatGraph({ graphEvents, incidentId, incidentActive, c
     labelLayer.selectAll('text.type-bg').data(nodes).join('text')
       .attr('class', 'type-bg')
       .attr('text-anchor', 'middle').attr('dy', d => getNodeConfig(d.type).r + 25)
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '7')
       .attr('stroke', '#18181B').attr('stroke-width', 3).attr('stroke-linejoin', 'round')
       .text(d => d.type);
@@ -338,7 +338,7 @@ export default function ThreatGraph({ graphEvents, incidentId, incidentActive, c
     labelLayer.selectAll('text.type-fg').data(nodes).join('text')
       .attr('class', 'type-fg')
       .attr('text-anchor', 'middle').attr('dy', d => getNodeConfig(d.type).r + 25)
-      .attr('font-family', "'Plus Jakarta Sans', system-ui, sans-serif")
+      .attr('font-family', "Inter, system-ui, sans-serif")
       .attr('font-size', '7')
       .attr('fill', d => getNodeConfig(d.type).color)
       .text(d => d.type);
