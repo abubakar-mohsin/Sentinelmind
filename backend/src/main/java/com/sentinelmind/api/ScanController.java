@@ -4,6 +4,7 @@ import com.sentinelmind.agents.forensics.ForensicsAgent;
 import com.sentinelmind.agents.supply.DependencyScanner;
 import com.sentinelmind.agents.supply.SbomAnalyzer;
 import com.sentinelmind.agents.vuln.VulnerabilityScannerAgent;
+import com.sentinelmind.model.ForensicsTimeline;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -66,6 +67,25 @@ public class ScanController {
         ));
     }
 
+    // GET /api/scan/vulnerability?package=log4j-core&version=2.14.1
+    @GetMapping("/scan/vulnerability")
+    public ResponseEntity<Object> scanVulnerabilityGet(
+            @RequestParam("package") String packageName,
+            @RequestParam(value = "version", defaultValue = "latest") String version) {
+
+        List<Map<String, Object>> results = vulnScanner.scanPackage(packageName, version);
+        if (results.size() == 1 && results.get(0).containsKey("message")) {
+            return ResponseEntity.ok(results.get(0));
+        }
+        return ResponseEntity.ok(Map.of(
+            "packageName", packageName,
+            "version",     version,
+            "cveCount",    results.size(),
+            "cves",        results,
+            "agentName",   vulnScanner.getAgentName()
+        ));
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Forensics Agent
     // GET /api/forensics/{incidentId}
@@ -77,6 +97,18 @@ public class ScanController {
 
         Map<String, Object> report = forensicsAgent.generateReport(incidentId);
         return ResponseEntity.ok(report);
+    }
+
+    // GET /api/scan/forensics?sourceIp=185.220.101.47&actor=ahmed@targetcorp.com&incidentId=optional
+    @GetMapping("/scan/forensics")
+    public ResponseEntity<ForensicsTimeline> getForensicsTimeline(
+            @RequestParam("sourceIp") String sourceIp,
+            @RequestParam("actor") String actor,
+            @RequestParam(value = "incidentId", defaultValue = "") String incidentId) {
+
+        ForensicsTimeline timeline = forensicsAgent.generateTimeline(
+            incidentId.isEmpty() ? null : incidentId, sourceIp, actor);
+        return ResponseEntity.ok(timeline);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -99,6 +131,15 @@ public class ScanController {
             "suspects",      suspects,
             "agentName",     dependencyScanner.getAgentName()
         ));
+    }
+
+    // GET /api/scan/dependency?package=l0g4j-core
+    @GetMapping("/scan/dependency")
+    public ResponseEntity<Object> scanDependencyGet(
+            @RequestParam("package") String packageName) {
+
+        List<Map<String, Object>> results = dependencyScanner.scanDependency(packageName);
+        return ResponseEntity.ok(results);
     }
 
     // ─────────────────────────────────────────────────────────────────

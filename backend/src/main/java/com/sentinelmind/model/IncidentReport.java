@@ -172,9 +172,61 @@ public class IncidentReport {
             return this;
         }
 
+        /**
+         * Composes a human-readable explanation of why this incident was classified
+         * at this severity. Called automatically by build() if no reason was set.
+         */
+        private String composeReason() {
+            StringBuilder r = new StringBuilder();
+
+            if (anomalyScore > 0) {
+                double zScore = anomalyScore * 10.0;
+                r.append(String.format(
+                    "Anomaly detection flagged a %.1fσ deviation from behavioral baseline",
+                    zScore));
+                if (triggeringEvent != null) {
+                    if (triggeringEvent.getCountry() != null) {
+                        r.append(String.format(" (login from %s", triggeringEvent.getCountry()));
+                    }
+                    if (triggeringEvent.getHour() > 0) {
+                        r.append(String.format(" at %02d:00", triggeringEvent.getHour()));
+                    }
+                    if (triggeringEvent.getCountry() != null || triggeringEvent.getHour() > 0) {
+                        r.append(")");
+                    }
+                }
+                r.append(". ");
+            }
+
+            if (threatIntelResult != null && !threatIntelResult.isEmpty()) {
+                r.append("Threat intelligence: ").append(threatIntelResult).append(". ");
+            }
+
+            if (mitreIds != null && !mitreIds.isEmpty()) {
+                r.append("Classified as MITRE ATT&CK ");
+                for (int i = 0; i < mitreIds.size(); i++) {
+                    r.append(mitreIds.get(i));
+                    if (mitreNames != null && i < mitreNames.size()) {
+                        r.append(" (").append(mitreNames.get(i)).append(")");
+                    }
+                    if (i < mitreIds.size() - 1) r.append(" + ");
+                }
+                r.append(". ");
+            }
+
+            r.append(String.format(
+                "Combined confidence: %.1f%% (threshold: 92.0%%).",
+                confidenceScore * 100));
+
+            return r.toString();
+        }
+
         public IncidentReport build() {
             if (incidentId == null)      throw new IllegalStateException("incidentId is required");
             if (triggeringEvent == null) throw new IllegalStateException("triggeringEvent is required");
+            if (this.reason == null || this.reason.isEmpty()) {
+                this.reason = composeReason();
+            }
             return new IncidentReport(this);
         }
     }

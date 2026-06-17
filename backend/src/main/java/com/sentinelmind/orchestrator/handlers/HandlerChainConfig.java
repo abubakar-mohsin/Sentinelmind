@@ -19,9 +19,9 @@ import org.springframework.context.annotation.Primary;
 public class HandlerChainConfig {
 
     private final LowSeverityHandler      lowHandler;
-    private final MediumSeverityHandler   mediumHandler;
-    private final HighSeverityHandler     highHandler;
-    private final CriticalSeverityHandler criticalHandler;
+    private final MediumSeverityHandler    mediumHandler;
+    private final HighSeverityHandler      highHandler;
+    private final CriticalSeverityHandler  criticalHandler;
 
     public HandlerChainConfig(LowSeverityHandler lowHandler,
                               MediumSeverityHandler mediumHandler,

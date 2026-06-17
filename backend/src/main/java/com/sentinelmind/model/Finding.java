@@ -63,6 +63,12 @@ public class Finding {
     // Null when running in rule-based fallback mode.
     private String llmReasoning;
 
+    private int priorIncidentCount;
+    private int relatedCampaignCount;
+
+    // Actor field for the Chain of Responsibility handlers
+    private String actor;
+
     /**
      * Convert severity string to integer level for the Chain of Responsibility.
      * Maps to the constants defined in AbstractEventHandler.
