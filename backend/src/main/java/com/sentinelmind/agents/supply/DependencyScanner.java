@@ -31,17 +31,36 @@ public class DependencyScanner implements ISecurityAgent {
 
     private static final Logger log = LoggerFactory.getLogger(DependencyScanner.class);
 
-    // Popular packages across npm, PyPI, and Maven that attackers commonly impersonate
-    private static final List<String> POPULAR_PACKAGES = List.of(
-        // Python (PyPI)
-        "requests", "numpy", "pandas", "flask", "django", "scipy",
-        "tensorflow", "pytorch", "pillow", "boto3", "sqlalchemy",
-        // JavaScript (npm)
-        "react", "lodash", "express", "axios", "moment", "webpack",
-        "typescript", "jest", "eslint", "babel", "prettier",
-        // Java (Maven)
-        "log4j-core", "spring-boot", "jackson-databind", "guava",
-        "commons-lang3", "slf4j-api", "hibernate-core"
+    private static final Set<String> POPULAR_PACKAGES = Set.of(
+        // Spring ecosystem
+        "spring-boot", "spring-core", "spring-web", "spring-security",
+        "spring-data-jpa", "spring-kafka", "spring-webmvc", "spring-context",
+        // Apache
+        "log4j-core", "log4j-api", "commons-lang3", "commons-io",
+        "commons-collections", "commons-codec", "commons-logging",
+        "kafka-clients", "kafka-streams", "httpcomponents-client",
+        "struts2-core", "tomcat-embed-core",
+        // Google
+        "guava", "gson", "protobuf-java", "grpc-core",
+        // Jackson
+        "jackson-databind", "jackson-core", "jackson-annotations",
+        // Database
+        "postgresql", "mysql-connector-j", "h2", "flyway-core",
+        "hibernate-core", "mybatis",
+        // Networking
+        "netty-all", "netty-codec-http", "okhttp", "retrofit",
+        // Security
+        "bouncycastle", "bcprov-jdk15on", "nimbus-jose-jwt",
+        "spring-security-crypto", "jasypt",
+        // Testing
+        "junit-jupiter", "mockito-core", "assertj-core", "testcontainers",
+        // Build/util
+        "lombok", "mapstruct", "slf4j-api", "logback-classic",
+        "micrometer-core", "resilience4j-core",
+        // npm packages
+        "lodash", "express", "react", "axios", "moment",
+        "webpack", "babel-core", "eslint", "typescript",
+        "socket.io", "mongoose", "sequelize", "dotenv"
     );
 
     @Override
@@ -55,6 +74,64 @@ public class DependencyScanner implements ISecurityAgent {
                 .agentName(getAgentName())
                 .summary("Use POST /api/scan/dependency with a list of package names")
                 .build();
+    }
+
+    /**
+     * Scan a single package name for typosquatting suspects.
+     * Used by the GET /api/scan/dependency endpoint.
+     */
+    public List<Map<String, Object>> scanDependency(String packageName) {
+        List<Map<String, Object>> findings = new ArrayList<>();
+        String normalized = packageName.toLowerCase().trim();
+
+        for (String popular : POPULAR_PACKAGES) {
+            int distance = levenshteinDistance(normalized, popular);
+
+            if (distance == 0) {
+                return List.of(Map.of(
+                    "packageName", packageName,
+                    "status", "TRUSTED",
+                    "message", "Package matches known trusted library: " + popular,
+                    "riskScore", 0.0
+                ));
+            }
+
+            if (distance <= 2) {
+                double riskScore = distance == 1 ? 0.95 : 0.65;
+
+                if (normalized.matches(".*[0-9].*") && popular.matches(".*[a-z].*")) {
+                    riskScore = Math.min(riskScore + 0.15, 1.0);
+                }
+
+                Map<String, Object> finding = new LinkedHashMap<>();
+                finding.put("packageName", packageName);
+                finding.put("similarTo", popular);
+                finding.put("editDistance", distance);
+                finding.put("riskScore", riskScore);
+                finding.put("riskLevel", distance == 1 ? "CRITICAL" : "HIGH");
+                finding.put("description", String.format(
+                    "Package '%s' is suspiciously similar to popular package '%s' " +
+                    "(edit distance: %d). Possible typosquatting attack.",
+                    packageName, popular, distance));
+                finding.put("recommendation",
+                    "Verify this package on Maven Central or npm registry before use. " +
+                    "Check publisher, download count, and source repository.");
+                findings.add(finding);
+            }
+        }
+
+        if (findings.isEmpty()) {
+            return List.of(Map.of(
+                "packageName", packageName,
+                "status", "UNKNOWN",
+                "message", "Package not found in trusted package list — manual review recommended",
+                "riskScore", 0.3
+            ));
+        }
+
+        findings.sort((a, b) -> Double.compare(
+            (Double) b.get("riskScore"), (Double) a.get("riskScore")));
+        return findings;
     }
 
     /**

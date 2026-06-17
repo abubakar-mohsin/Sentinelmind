@@ -87,6 +87,16 @@ public class KnowledgeGraphService {
         }
     }
 
+    /**
+     * Executes a write Cypher query (SET, CREATE, MERGE) that returns no results.
+     * Alias for runCypher() with parameters — used by agents that need explicit naming.
+     */
+    public void execute(String cypher, Map<String, Object> params) {
+        try (Session session = driver.session()) {
+            session.run(cypher, params);
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════════════
     // Threat Graph enrichment — called by the Orchestrator during investigation
     // Uses MERGE instead of CREATE so they're idempotent (safe for replays).

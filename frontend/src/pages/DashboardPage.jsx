@@ -210,8 +210,30 @@ export default function DashboardPage() {
 
       case 'GRAPH_UPDATED':
         setGraphEvents(prev => [...prev, msg]);
-        if (msg.details?.newNodes) setGraphNodes(prev => [...prev, ...msg.details.newNodes]);
-        if (msg.details?.newEdges) setGraphEdges(prev => [...prev, ...msg.details.newEdges]);
+        if (msg.details?.newNodes) {
+          setGraphNodes(prev => {
+            const existingIds = new Set(prev.map(n => n.id));
+            const newNodes = msg.details.newNodes.filter(n => !existingIds.has(n.id));
+            return [...prev, ...newNodes];
+          });
+        }
+        if (msg.details?.newEdges) {
+          setGraphEdges(prev => {
+            const existingKeys = new Set(prev.map(e => `${e.source}-${e.target}-${e.type}`));
+            const newEdges = msg.details.newEdges.filter(e =>
+              !existingKeys.has(`${e.source}-${e.target}-${e.type}`)
+            );
+            return [...prev, ...newEdges];
+          });
+        }
+        break;
+
+      case 'CAMPAIGN_ALERT':
+        console.warn('[CAMPAIGN_ALERT]', msg.message);
+        break;
+
+      case 'CRITICAL_ALERT':
+        console.error('[CRITICAL_ALERT]', msg.message);
         break;
 
       default: break;

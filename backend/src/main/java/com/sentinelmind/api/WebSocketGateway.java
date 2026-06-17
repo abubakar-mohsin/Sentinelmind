@@ -1,5 +1,6 @@
 package com.sentinelmind.api;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sentinelmind.messaging.KafkaTopics;
 import com.sentinelmind.model.WebSocketMessage;
 import org.slf4j.Logger;
@@ -7,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 /**
  * WebSocketGateway — bridges Kafka and WebSocket.
@@ -20,15 +23,28 @@ public class WebSocketGateway {
     private static final String DASHBOARD_TOPIC = "/topic/events";
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final ObjectMapper objectMapper;
 
-    public WebSocketGateway(SimpMessagingTemplate messagingTemplate) {
+    public WebSocketGateway(SimpMessagingTemplate messagingTemplate, ObjectMapper objectMapper) {
         this.messagingTemplate = messagingTemplate;
+        this.objectMapper = objectMapper;
     }
 
     /** Send a message directly to all dashboard subscribers (called by the Orchestrator). */
     public void broadcast(WebSocketMessage message) {
         log.debug("Broadcasting type={} incidentId={}", message.getType(), message.getIncidentId());
         messagingTemplate.convertAndSend(DASHBOARD_TOPIC, message);
+    }
+
+    /** Send an arbitrary Map payload to all dashboard subscribers. */
+    public void sendRawAlert(Map<String, Object> payload) {
+        try {
+            String json = objectMapper.writeValueAsString(payload);
+            log.info("Sending raw alert: type={}", payload.get("type"));
+            messagingTemplate.convertAndSend(DASHBOARD_TOPIC, json);
+        } catch (Exception e) {
+            log.error("Failed to serialize raw alert", e);
+        }
     }
 
     /**

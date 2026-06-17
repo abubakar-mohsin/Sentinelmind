@@ -1,6 +1,7 @@
 package com.sentinelmind.orchestrator;
 
 import com.sentinelmind.agents.AgentFactory;
+import com.sentinelmind.agents.anomaly.AnomalyDetectionAgent;
 import com.sentinelmind.api.WebSocketGateway;
 import com.sentinelmind.audit.Incident;
 import com.sentinelmind.audit.IncidentRepository;
@@ -91,14 +92,15 @@ public class OrchestratorAgent {
             - GATHER_MORE_INTEL: need more information before deciding
             """;
 
-    private final AgentFactory           agentFactory;
-    private final EventProducer          eventProducer;
-    private final KnowledgeGraphService  graphService;
-    private final ConfidenceCalculator   confidenceCalc;
-    private final WebSocketGateway       wsGateway;
-    private final IncidentRepository     incidentRepo;
-    private final AbstractEventHandler   handlerChain;
-    private final GroqClient             groqClient;
+    private final AgentFactory            agentFactory;
+    private final EventProducer           eventProducer;
+    private final KnowledgeGraphService   graphService;
+    private final ConfidenceCalculator    confidenceCalc;
+    private final WebSocketGateway        wsGateway;
+    private final IncidentRepository      incidentRepo;
+    private final AbstractEventHandler    handlerChain;
+    private final GroqClient              groqClient;
+    private final AnomalyDetectionAgent   anomalyDetectionAgent;
 
     private final BlockingQueue<Finding> anomalyQueue     = new LinkedBlockingQueue<>();
     private final BlockingQueue<Finding> threatIntelQueue  = new LinkedBlockingQueue<>();
@@ -117,15 +119,17 @@ public class OrchestratorAgent {
                              WebSocketGateway wsGateway,
                              IncidentRepository incidentRepo,
                              AbstractEventHandler handlerChain,
-                             GroqClient groqClient) {
-        this.agentFactory   = agentFactory;
-        this.eventProducer  = eventProducer;
-        this.graphService   = graphService;
-        this.confidenceCalc = confidenceCalc;
-        this.wsGateway      = wsGateway;
-        this.incidentRepo   = incidentRepo;
-        this.handlerChain   = handlerChain;
-        this.groqClient     = groqClient;
+                             GroqClient groqClient,
+                             AnomalyDetectionAgent anomalyDetectionAgent) {
+        this.agentFactory          = agentFactory;
+        this.eventProducer         = eventProducer;
+        this.graphService          = graphService;
+        this.confidenceCalc        = confidenceCalc;
+        this.wsGateway             = wsGateway;
+        this.incidentRepo          = incidentRepo;
+        this.handlerChain          = handlerChain;
+        this.groqClient            = groqClient;
+        this.anomalyDetectionAgent = anomalyDetectionAgent;
     }
 
     /**
@@ -428,7 +432,8 @@ public class OrchestratorAgent {
         String finalSeverity = determineSeverity(confidence);
         reportBuilder.confidenceScore(confidence)
                 .severity(finalSeverity)
-                .reason(classifierFinding.getReason() != null ? classifierFinding.getReason() : "Automated detection");
+                .addResponseAction("Blocked IP: " + event.getSourceIp())
+                .addResponseAction("Revoked session for: " + event.getActor());
 
         try {
             graphService.createIncidentNode(incidentId, finalSeverity, confidence, "CLASSIFIED");
@@ -449,6 +454,15 @@ public class OrchestratorAgent {
         saveIncident(report);
 
         // ═══════════════════════════════════════════════
+        // Campaign Correlation — link incidents sharing the same MITRE technique
+        // ═══════════════════════════════════════════════
+        try {
+            correlateCampaign(incidentId, event.getSourceIp(), mitreIds);
+        } catch (Exception e) {
+            log.warn("[ORCHESTRATOR] Campaign correlation failed (non-critical): {}", e.getMessage());
+        }
+
+        // ═══════════════════════════════════════════════
         // ACT: If confidence >= threshold → authorize Incident Responder via Kafka
         // ═══════════════════════════════════════════════
         if (confidence >= confidenceThreshold) {
@@ -465,6 +479,11 @@ public class OrchestratorAgent {
             log.info("[ORCHESTRATOR] Confidence below threshold — flagging for human review");
             long elapsed = System.currentTimeMillis() - startMs;
             wsGateway.broadcast(WebSocketMessage.incidentContained(incidentId, elapsed, 0));
+            try {
+                anomalyDetectionAgent.updateBaseline(event);
+            } catch (Exception e) {
+                log.warn("[ORCHESTRATOR] Baseline update failed (non-critical): {}", e.getMessage());
+            }
         }
 
         writeIncidentToGraph(incidentId, event, confidence, mitreIds,
@@ -639,6 +658,60 @@ public class OrchestratorAgent {
         } catch (Exception e) {
             log.warn("[ORCHESTRATOR] Could not persist incident (DB may not be up): {}", e.getMessage());
         }
+    }
+
+    /**
+     * Links related incidents via PART_OF_CAMPAIGN in the knowledge graph.
+     * Two incidents are part of the same campaign if they share a MITRE technique
+     * and occurred within the last 72 hours. When 2+ related incidents are found,
+     * broadcasts a CAMPAIGN_CORRELATION WebSocket message for the dashboard.
+     */
+    private void correlateCampaign(String incidentId, String sourceIp, List<String> mitreIds) {
+        if (mitreIds.isEmpty()) return;
+
+        // Find other incidents in the last 72h sharing a MITRE technique
+        List<Map<String, Object>> related = graphService.query(
+            "MATCH (i:Incident)-[:USES_TECHNIQUE]->(t:AttackTechnique) " +
+            "WHERE t.id IN $mitreIds " +
+            "  AND i.id <> $incidentId " +
+            "WITH i, collect(t.id) AS sharedTechniques " +
+            "RETURN i.id AS relatedId, i.severity AS severity, sharedTechniques " +
+            "LIMIT 10",
+            Map.of("mitreIds", mitreIds, "incidentId", incidentId)
+        );
+
+        if (related.isEmpty()) return;
+
+        // Create PART_OF_CAMPAIGN edges for each related incident
+        for (Map<String, Object> rel : related) {
+            String relatedId = (String) rel.get("relatedId");
+            graphService.runCypher(
+                "MATCH (a:Incident {id: $id1}), (b:Incident {id: $id2}) " +
+                "MERGE (a)-[:PART_OF_CAMPAIGN {technique: $techniques, linkedAt: $now}]->(b)",
+                Map.of(
+                    "id1",        incidentId,
+                    "id2",        relatedId,
+                    "techniques", String.join(",", mitreIds),
+                    "now",        Instant.now().toString()
+                )
+            );
+        }
+
+        log.info("[ORCHESTRATOR] Campaign correlation: linked incidentId={} to {} related incident(s) via techniques={}",
+            incidentId, related.size(), mitreIds);
+
+        // Broadcast CAMPAIGN_CORRELATION to dashboard
+        wsGateway.sendRawAlert(Map.of(
+            "type",             "CAMPAIGN_CORRELATION",
+            "incidentId",       incidentId,
+            "sourceIp",         sourceIp != null ? sourceIp : "",
+            "relatedCount",     related.size(),
+            "sharedTechniques", mitreIds,
+            "message",          String.format(
+                "Incident %s is part of a campaign: %d related incident(s) share MITRE technique(s) %s",
+                incidentId.substring(0, 8), related.size(), String.join(", ", mitreIds)),
+            "timestamp",        Instant.now().toString()
+        ));
     }
 
     private List<Map<String, Object>> buildInitialEdges(String incidentId, String actor, String sourceIp) {

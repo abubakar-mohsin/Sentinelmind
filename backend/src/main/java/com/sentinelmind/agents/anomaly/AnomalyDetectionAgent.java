@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -193,6 +194,94 @@ public class AnomalyDetectionAgent implements ISecurityAgent {
                 .action(event.getAction())
                 .targetUser(event.getTargetUser())
                 .build();
+    }
+
+    /**
+     * Updates the user's behavioral baseline in Neo4j after a CLEAN event.
+     * Uses exponential moving average with alpha=0.1 — each new observation has 10% weight
+     * and the existing baseline has 90% weight. This prevents a single anomalous event
+     * from corrupting the baseline.
+     *
+     * Called by OrchestratorAgent when confidence < threshold and no incident is raised.
+     */
+    public void updateBaseline(SecurityEvent event) {
+        try {
+            String readQuery =
+                "MATCH (u:User {email: $email}) " +
+                "RETURN u.avgLoginHour as avgHour, u.stdDevLoginHour as stdHour, " +
+                "       u.avgLatencyMs as avgLatency, u.stdDevLatencyMs as stdLatency, " +
+                "       u.baselineLoginCount as loginCount";
+
+            List<Map<String, Object>> results = graphService.query(readQuery,
+                Map.of("email", event.getActor() != null ? event.getActor() : ""));
+
+            if (results.isEmpty()) {
+                log.warn("[BASELINE] No user found for email: {}", event.getActor());
+                return;
+            }
+
+            Map<String, Object> current = results.get(0);
+            double alpha = 0.1;
+
+            double currentAvgHour    = toDouble(current.get("avgHour"),    DEFAULT_AVG_HOUR);
+            double currentStdHour    = toDouble(current.get("stdHour"),    DEFAULT_STD_HOUR);
+            double currentAvgLatency = toDouble(current.get("avgLatency"), DEFAULT_AVG_LATENCY);
+            double currentStdLatency = toDouble(current.get("stdLatency"), DEFAULT_STD_LATENCY);
+            long   loginCount        = toLong(current.get("loginCount"),   245L);
+
+            double newAvgHour    = (1 - alpha) * currentAvgHour    + alpha * event.getHour();
+            double newAvgLatency = (1 - alpha) * currentAvgLatency + alpha * event.getLoginLatencyMs();
+
+            double hourDiff       = Math.abs(event.getHour() - newAvgHour);
+            double newStdHour     = (1 - alpha) * currentStdHour    + alpha * hourDiff;
+            double latencyDiff    = Math.abs(event.getLoginLatencyMs() - newAvgLatency);
+            double newStdLatency  = (1 - alpha) * currentStdLatency + alpha * latencyDiff;
+
+            String updateQuery =
+                "MATCH (u:User {email: $email}) " +
+                "SET u.avgLoginHour        = $avgHour, " +
+                "    u.stdDevLoginHour     = $stdHour, " +
+                "    u.avgLatencyMs        = $avgLatency, " +
+                "    u.stdDevLatencyMs     = $stdLatency, " +
+                "    u.baselineLoginCount  = $loginCount, " +
+                "    u.lastBaselineUpdate  = $now";
+
+            graphService.execute(updateQuery, Map.of(
+                "email",      event.getActor(),
+                "avgHour",    newAvgHour,
+                "stdHour",    Math.max(newStdHour, 0.5),
+                "avgLatency", newAvgLatency,
+                "stdLatency", Math.max(newStdLatency, 50.0),
+                "loginCount", loginCount + 1,
+                "now",        System.currentTimeMillis()
+            ));
+
+            log.info("[BASELINE] Updated baseline for {} — avgHour: {} -> {}, loginCount: {}",
+                event.getActor(),
+                String.format("%.1f", currentAvgHour),
+                String.format("%.1f", newAvgHour),
+                loginCount + 1);
+
+        } catch (Exception e) {
+            log.error("[BASELINE] Failed to update baseline for {}: {}", event.getActor(), e.getMessage());
+        }
+    }
+
+    private double toDouble(Object value, double defaultVal) {
+        if (value == null) return defaultVal;
+        if (value instanceof Double d) return d;
+        if (value instanceof Long l)   return l.doubleValue();
+        if (value instanceof Integer i) return i.doubleValue();
+        try { return Double.parseDouble(value.toString()); }
+        catch (Exception e) { return defaultVal; }
+    }
+
+    private long toLong(Object value, long defaultVal) {
+        if (value == null) return defaultVal;
+        if (value instanceof Long l)   return l;
+        if (value instanceof Integer i) return i.longValue();
+        try { return Long.parseLong(value.toString()); }
+        catch (Exception e) { return defaultVal; }
     }
 
     private double extractDouble(Map<String, Object> row, String key, double fallback) {

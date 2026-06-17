@@ -175,7 +175,7 @@ services:
 
   # ─────────────────────────────────────────────
   # React SaaS Frontend (Landing + Login + Dashboard)
-  # http://localhost:3001  →  nginx serves the CRA build
+  # http://localhost:3000  →  nginx serves the CRA build
   # nginx proxies /api/* and /ws/* to the backend container.
   # No REACT_APP_WS_URL needed — the app uses relative URLs
   # which nginx forwards to backend:8080 internally.
@@ -218,6 +218,7 @@ services:
         echo 'Running Neo4j seed scripts...';
         /var/lib/neo4j/bin/cypher-shell -a $$NEO4J_ADDRESS -u $$NEO4J_USER -p $$NEO4J_PASSWORD -f /seed/mitre_attack_seed.cypher;
         /var/lib/neo4j/bin/cypher-shell -a $$NEO4J_ADDRESS -u $$NEO4J_USER -p $$NEO4J_PASSWORD -f /seed/demo_entities.cypher;
+        /var/lib/neo4j/bin/cypher-shell -a $$NEO4J_ADDRESS -u $$NEO4J_USER -p $$NEO4J_PASSWORD -f /seed/cve_seed.cypher;
         touch /seed_done/seeded;
         echo 'Seed complete.';
       "
