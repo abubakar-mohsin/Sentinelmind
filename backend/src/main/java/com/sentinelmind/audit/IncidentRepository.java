@@ -7,4 +7,6 @@ import java.util.UUID;
 
 @Repository
 public interface IncidentRepository extends JpaRepository<Incident, UUID> {
+	long countBySeverity(String severity);
+	long countByStatus(String status);
 }

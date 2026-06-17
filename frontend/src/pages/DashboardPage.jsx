@@ -10,6 +10,7 @@ import ThreatMatrix        from '../components/ThreatMatrix';
 import ResponseLog         from '../components/ResponseLog';
 import AlertQueue          from '../components/AlertQueue';
 import TopologyMap         from '../components/TopologyMap';
+import SystemMetrics       from '../components/SystemMetrics';
 
 const INITIAL_AGENTS = {
   AnomalyDetectionAgent:  { status: 'IDLE', summary: null, elapsed: null, startTime: null },
@@ -80,6 +81,7 @@ export default function DashboardPage() {
   const [responses,      setResponses]      = useState([]);
   const [incidents,      setIncidents]      = useState([]);
   const [metrics,        setMetrics]        = useState(INITIAL_METRICS);
+  const [platformMetrics, setPlatformMetrics] = useState(null);
   const [reasoningSteps, setReasoningSteps] = useState([]);
   const [baseline,       setBaseline]       = useState(null);
   const [currentActor,   setCurrentActor]   = useState('ahmed@targetcorp.com');
@@ -105,6 +107,25 @@ export default function DashboardPage() {
     }
     fetchBaseline();
   }, [currentActor, contained]);
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+        const response = await fetch(`${API_BASE}/api/metrics/summary`);
+        if (response.ok) {
+          const data = await response.json();
+          setPlatformMetrics(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch metrics:', err);
+      }
+    };
+
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleMessage = useCallback((msg) => {
     if (msg.incidentId && msg.incidentId !== currentIdRef.current) {
@@ -232,6 +253,10 @@ export default function DashboardPage() {
         console.warn('[CAMPAIGN_ALERT]', msg.message);
         break;
 
+      case 'CAMPAIGN_CORRELATION':
+        console.warn('[CAMPAIGN]', msg.message, '| Related:', msg.relatedIncidents);
+        break;
+
       case 'CRITICAL_ALERT':
         console.error('[CRITICAL_ALERT]', msg.message);
         break;
@@ -295,6 +320,8 @@ export default function DashboardPage() {
             </div>
           ) : (
             <>
+              {platformMetrics && <SystemMetrics metrics={platformMetrics} />}
+
               {baseline && (
                 <div style={{
                   padding: '10px 16px',

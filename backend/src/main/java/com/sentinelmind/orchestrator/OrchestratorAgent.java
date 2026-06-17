@@ -2,6 +2,7 @@ package com.sentinelmind.orchestrator;
 
 import com.sentinelmind.agents.AgentFactory;
 import com.sentinelmind.agents.anomaly.AnomalyDetectionAgent;
+import com.sentinelmind.api.MetricsController;
 import com.sentinelmind.api.WebSocketGateway;
 import com.sentinelmind.audit.Incident;
 import com.sentinelmind.audit.IncidentRepository;
@@ -484,6 +485,12 @@ public class OrchestratorAgent {
             } catch (Exception e) {
                 log.warn("[ORCHESTRATOR] Baseline update failed (non-critical): {}", e.getMessage());
             }
+        }
+
+        try {
+            MetricsController.recordDetection(System.currentTimeMillis() - startMs);
+        } catch (Exception e) {
+            log.warn("[ORCHESTRATOR] Metrics recording failed (non-critical): {}", e.getMessage());
         }
 
         writeIncidentToGraph(incidentId, event, confidence, mitreIds,

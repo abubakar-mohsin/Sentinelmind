@@ -52,6 +52,44 @@ function MetricTile({ label, value, color, unit }) {
 }
 
 export default function SystemMetrics({ metrics }) {
+  if (!metrics) return null;
+
+  const hasPlatformMetrics = metrics.totalIncidents != null || metrics.criticalActive != null || metrics.systemStatus != null;
+
+  if (hasPlatformMetrics) {
+    return (
+      <div style={{
+        gridArea:    'metrics',
+        display:     'flex',
+        gap:         8,
+        padding:     '8px',
+        borderTop:   '1px solid var(--border)',
+        background:  'var(--bg-secondary)',
+      }}>
+        <MetricTile
+          label="TOTAL INCIDENTS"
+          value={metrics.totalIncidents}
+          color="var(--cyan)"
+        />
+        <MetricTile
+          label="CRITICAL ACTIVE"
+          value={metrics.criticalActive}
+          color="var(--red)"
+        />
+        <MetricTile
+          label="AGENTS ONLINE"
+          value={metrics.agentsOnline}
+          color="var(--green)"
+        />
+        <MetricTile
+          label="SYSTEM STATUS"
+          value={metrics.systemStatus}
+          color={metrics.systemStatus === 'OPERATIONAL' ? 'var(--green)' : 'var(--yellow)'}
+        />
+      </div>
+    );
+  }
+
   const { detectionMs, responseMs, confidence, actionsExecuted } = metrics;
 
   const detectionS  = detectionMs  != null ? (detectionMs  / 1000).toFixed(2) : null;
