@@ -9,6 +9,8 @@ import TheProblem from '../components/sections/TheProblem';
 import HowItWorks from '../components/sections/HowItWorks';
 import LiveNumbers from '../components/sections/LiveNumbers';
 import FinalCTA from '../components/sections/FinalCTA';
+import Testimonials from '../components/sections/Testimonials';
+import FeaturesOrbit from '../components/sections/FeaturesOrbit';
 
 /* ── Navbar ──────────────────────────────────────── */
 
@@ -649,10 +651,14 @@ export default function LandingPage() {
       {/* ── Trusted by ── */}
       <TrustedBySection />
 
+      {/* ── Agent Orbit ── */}
+      <FeaturesOrbit />
+
       {/* ── Sections 3–6 ── */}
       <TheProblem />
       <HowItWorks />
       <LiveNumbers />
+      <Testimonials />
       <FinalCTA />
 
       {/* ── Footer ── */}

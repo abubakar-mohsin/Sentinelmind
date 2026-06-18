@@ -2013,3 +2013,34 @@ input, textarea, select {
   animation: pulse-opacity 0.8s ease-in-out infinite;
 }
 
+/* ── ScrollReelTestimonials ───────────────────────── */
+
+.scroll-reel-char {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: scroll-reel-char-rise 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.scroll-reel-exit {
+  animation: scroll-reel-exit 240ms ease forwards;
+}
+
+@keyframes scroll-reel-char-rise {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scroll-reel-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
