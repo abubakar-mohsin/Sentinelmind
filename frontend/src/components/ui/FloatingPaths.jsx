@@ -2,14 +2,13 @@ import React from 'react';
 import { motion } from 'framer-motion';
 
 /**
- * FloatingPaths — animated SVG path background for the hero section.
- * Renders 36 curved paths that animate continuously, giving the impression
- * of moving signal traces or threat vectors — fitting the cybersecurity theme.
- *
- * Adapted from the BackgroundPaths pattern to work with the project's dark
- * design system (no Tailwind, plain inline styles).
+ * FloatingPaths — exact port of the BackgroundPaths component.
+ * Path formula, animation values, strokeOpacity, and viewBox are
+ * preserved 1-to-1 from the original. Only TypeScript types and
+ * Tailwind classes have been replaced with plain JSX / inline styles.
+ * stroke="currentColor" pulls from the SVG's color property, set to
+ * white so the paths are visible on the dark hero background.
  */
-
 function FloatingPaths({ position }) {
   const paths = Array.from({ length: 36 }, (_, i) => ({
     id: i,
@@ -20,15 +19,14 @@ function FloatingPaths({ position }) {
     } ${343 - i * 6}C${616 - i * 5 * position} ${470 - i * 6} ${
       684 - i * 5 * position
     } ${875 - i * 6} ${684 - i * 5 * position} ${875 - i * 6}`,
-    // Indigo-tinted paths on the dark background — evokes signal/data traces
-    opacity: 0.04 + i * 0.018,
+    color: `rgba(15,23,42,${0.1 + i * 0.03})`,
     width: 0.5 + i * 0.03,
   }));
 
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
       <svg
-        style={{ width: '100%', height: '100%' }}
+        style={{ width: '100%', height: '100%', color: 'white' }}
         viewBox="0 0 696 316"
         fill="none"
         aria-hidden="true"
@@ -37,17 +35,17 @@ function FloatingPaths({ position }) {
           <motion.path
             key={path.id}
             d={path.d}
-            stroke="rgba(99,102,241,1)"
+            stroke="currentColor"
             strokeWidth={path.width}
-            strokeOpacity={path.opacity}
-            initial={{ pathLength: 0.3, opacity: 0.4 }}
+            strokeOpacity={0.1 + path.id * 0.03}
+            initial={{ pathLength: 0.3, opacity: 0.6 }}
             animate={{
               pathLength: 1,
-              opacity: [0.2, path.opacity, 0.2],
+              opacity: [0.3, 0.6, 0.3],
               pathOffset: [0, 1, 0],
             }}
             transition={{
-              duration: 20 + (path.id % 7) * 3,
+              duration: 20 + Math.random() * 10,
               repeat: Infinity,
               ease: 'linear',
             }}
@@ -59,8 +57,8 @@ function FloatingPaths({ position }) {
 }
 
 /**
- * AnimatedHeadline — animates each letter of each word with a spring entrance.
- * Used to give the hero headline a dramatic staggered reveal.
+ * AnimatedHeadline — spring letter-by-letter entrance animation.
+ * Used in the hero headline for a staggered reveal effect.
  */
 export function AnimatedHeadline({ text, className, style }) {
   const words = text.split(' ');
@@ -75,13 +73,13 @@ export function AnimatedHeadline({ text, className, style }) {
           {word.split('').map((letter, letterIndex) => (
             <motion.span
               key={`${wordIndex}-${letterIndex}`}
-              initial={{ y: 60, opacity: 0 }}
+              initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{
-                delay: wordIndex * 0.12 + letterIndex * 0.03,
+                delay: wordIndex * 0.1 + letterIndex * 0.03,
                 type: 'spring',
-                stiffness: 160,
-                damping: 22,
+                stiffness: 150,
+                damping: 25,
               }}
               style={{ display: 'inline-block' }}
             >

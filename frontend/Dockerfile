@@ -2,9 +2,13 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Install dependencies first (cached layer)
-COPY package.json .
-RUN npm install --silent
+# Install dependencies — copy lockfile too for reproducible installs
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps --silent
+
+# Copy config files needed for Tailwind CSS processing
+COPY tailwind.config.js postcss.config.js ./
+COPY tsconfig.json ./
 
 # Copy source and build
 COPY public/ ./public/
