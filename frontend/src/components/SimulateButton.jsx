@@ -52,13 +52,13 @@ export default function SimulateButton({ disabled }) {
   }
 
   const btnDisabled = loading || disabled;
-  const btnColor    = status === 'err' ? 'var(--yellow)' : 'var(--red)';
+  const btnColor    = status === 'err' ? 'var(--warning)' : 'var(--danger)';
 
   return (
     <div style={{
       gridArea: 'sim',
       borderBottom: '1px solid var(--border)',
-      background: 'var(--bg-secondary)',
+      background: 'var(--bg-surface)',
       display: 'flex',
       alignItems: 'center',
       gap: 20,
@@ -77,12 +77,12 @@ export default function SimulateButton({ disabled }) {
           ATTACK PAYLOAD
         </div>
         <div style={{
-          background: 'var(--bg-deep)',
+          background: 'var(--bg-elevated)',
           border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
+          borderRadius: 6,
           padding: '6px 12px',
           fontSize: 11,
-          fontFamily: 'var(--font)',
+          fontFamily: 'var(--font-mono)',
           lineHeight: '18px',
         }}>
           <div style={{ color: 'var(--text-3)' }}>{'{'}</div>
@@ -113,35 +113,34 @@ export default function SimulateButton({ disabled }) {
           onClick={handleClick}
           disabled={btnDisabled}
           style={{
-            fontFamily: 'var(--font)',
+            fontFamily: 'var(--font-sans)',
             fontSize: 12,
             fontWeight: 700,
             letterSpacing: '0.14em',
             padding: '9px 28px',
             border: `2px solid ${btnDisabled ? 'var(--text-3)' : btnColor}`,
             background: status === 'ok'
-              ? 'rgba(0,255,136,0.10)'
+              ? 'var(--success-bg)'
               : loading
-              ? `rgba(255,45,85,0.14)`
+              ? 'var(--danger-bg)'
               : 'transparent',
             color: btnDisabled ? 'var(--text-3)' : btnColor,
             cursor: btnDisabled ? 'not-allowed' : 'pointer',
-            borderRadius: 'var(--radius)',
+            borderRadius: 6,
             transition: 'all 0.15s ease',
-            boxShadow: !btnDisabled ? 'var(--glow-red)' : 'none',
             whiteSpace: 'nowrap',
           }}
           onMouseEnter={e => {
-            if (!btnDisabled) e.currentTarget.style.background = 'rgba(255,45,85,0.08)';
+            if (!btnDisabled) e.currentTarget.style.background = 'var(--danger-bg)';
           }}
           onMouseLeave={e => {
             if (!btnDisabled && !loading) e.currentTarget.style.background = 'transparent';
           }}
         >
-          {status === 'ok'  ? '✦ INJECTED SUCCESSFULLY' :
-           status === 'err' ? '⚠ INJECTION FAILED' :
-           loading          ? '⏳ INJECTING...' :
-                              '▸ EXECUTE SIMULATION'}
+          {status === 'ok'  ? 'Injected Successfully' :
+           status === 'err' ? 'Injection Failed' :
+           loading          ? 'Injecting...' :
+                              'Execute Simulation'}
         </button>
 
         <div style={{ fontSize: 10, color: 'var(--text-3)', letterSpacing: '0.06em' }}>
@@ -156,11 +155,10 @@ export default function SimulateButton({ disabled }) {
       {disabled && !loading && (
         <div style={{
           fontSize: 10,
-          color: 'var(--yellow)',
+          color: 'var(--warning)',
           letterSpacing: '0.10em',
-          animation: 'pulse-red 2s ease-in-out infinite',
         }}>
-          ⚠ INCIDENT IN PROGRESS — SIMULATION LOCKED
+          INCIDENT IN PROGRESS — SIMULATION LOCKED
         </div>
       )}
     </div>

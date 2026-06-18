@@ -62,8 +62,8 @@ export default function AlertQueue({ incidents }) {
                   cursor: 'pointer',
                   background: isOpen ? 'var(--accent-dim)' : 'transparent',
                   transition: 'background 0.15s',
-                  animation: i === 0 ? 'sweep-in 0.25s ease' : 'none',
                 }}
+                className={i === 0 ? 'alert-entry' : ''}
                 onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
                 onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = 'transparent'; }}
               >

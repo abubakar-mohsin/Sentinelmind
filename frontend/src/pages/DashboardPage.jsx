@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useWebSocket }    from '../ws/useWebSocket';
 import Sidebar             from '../components/layout/Sidebar';
+import BootOverlay         from '../components/BootOverlay';
+import StatusBar           from '../components/StatusBar';
+import ScenarioSelector    from '../components/ScenarioSelector';
 import AgentPipeline       from '../components/AgentPipeline';
 import AIReasoningPanel    from '../components/AIReasoningPanel';
 import ForensicsTimeline   from '../components/ForensicsTimeline';
@@ -11,6 +14,7 @@ import ResponseLog         from '../components/ResponseLog';
 import AlertQueue          from '../components/AlertQueue';
 import TopologyMap         from '../components/TopologyMap';
 import SystemMetrics       from '../components/SystemMetrics';
+import ResponseCenter     from '../components/ResponseCenter';
 
 const INITIAL_AGENTS = {
   AnomalyDetectionAgent:  { status: 'IDLE', summary: null, elapsed: null, startTime: null },
@@ -71,28 +75,32 @@ function ElapsedTimer({ startTime, stopped }) {
 }
 
 export default function DashboardPage() {
-  const [activePage,     setActivePage]     = useState('overview');
-  const [incidentActive, setIncidentActive] = useState(false);
-  const [currentId,      setCurrentId]      = useState(null);
-  const [threatLevel,    setThreatLevel]    = useState('NOMINAL');
-  const [contained,      setContained]      = useState(false);
-  const [agentStates,    setAgentStates]    = useState(INITIAL_AGENTS);
-  const [classifiedData, setClassifiedData] = useState(null);
-  const [responses,      setResponses]      = useState([]);
-  const [incidents,      setIncidents]      = useState([]);
-  const [metrics,        setMetrics]        = useState(INITIAL_METRICS);
+  const [activePage,      setActivePage]      = useState('overview');
+  const [showBoot,        setShowBoot]        = useState(true);
+  const [incidentActive,  setIncidentActive]  = useState(false);
+  const [currentId,       setCurrentId]       = useState(null);
+  const [threatLevel,     setThreatLevel]     = useState('NOMINAL');
+  const [contained,       setContained]       = useState(false);
+  const [agentStates,     setAgentStates]     = useState(INITIAL_AGENTS);
+  const [classifiedData,  setClassifiedData]  = useState(null);
+  const [responses,       setResponses]       = useState([]);
+  const [incidents,       setIncidents]       = useState([]);
+  const [metrics,         setMetrics]         = useState(INITIAL_METRICS);
   const [platformMetrics, setPlatformMetrics] = useState(null);
-  const [reasoningSteps, setReasoningSteps] = useState([]);
-  const [baseline,       setBaseline]       = useState(null);
-  const [currentActor,   setCurrentActor]   = useState('ahmed@targetcorp.com');
-  const [graphEvents,    setGraphEvents]    = useState([]);
-  const [graphNodes,     setGraphNodes]     = useState([]);
-  const [graphEdges,     setGraphEdges]     = useState([]);
-  const [systemAlerts,   setSystemAlerts]   = useState([]);
+  const [reasoningSteps,  setReasoningSteps]  = useState([]);
+  const [baseline,        setBaseline]        = useState(null);
+  const [currentActor,    setCurrentActor]    = useState('ahmed@targetcorp.com');
+  const [graphEvents,     setGraphEvents]     = useState([]);
+  const [graphNodes,      setGraphNodes]      = useState([]);
+  const [graphEdges,      setGraphEdges]      = useState([]);
+  const [systemAlerts,    setSystemAlerts]    = useState([]);
 
-  const currentIdRef    = useRef(null);
-  const activatedAtRef  = useRef(null);
-  const classifiedAtRef = useRef(null);
+  const currentIdRef      = useRef(null);
+  const activatedAtRef    = useRef(null);
+  const classifiedAtRef   = useRef(null);
+  // Maps agentName -> ISO timestamp string from AGENT_ACTIVATED messages
+  // Used to compute precise elapsed times without relying on browser clock drift.
+  const agentStartTsRef   = useRef({});
 
   useEffect(() => {
     async function fetchBaseline() {
@@ -113,6 +121,7 @@ export default function DashboardPage() {
     const fetchMetrics = async () => {
       try {
         const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+        // No auth header needed — running under mock Spring profile (permitAll)
         const response = await fetch(`${API_BASE}/api/metrics`);
         if (response.ok) {
           const data = await response.json();
@@ -151,6 +160,8 @@ export default function DashboardPage() {
     switch (msg.type) {
       case 'AGENT_ACTIVATED':
         if (msg.agentName === 'OrchestratorAgent') { setReasoningSteps([]); break; }
+        // Record the ISO timestamp from the WS message for elapsed computation.
+        agentStartTsRef.current[msg.agentName] = msg.timestamp;
         setAgentStates(prev => ({
           ...prev,
           [msg.agentName]: { status: 'RUNNING', summary: null, elapsed: null, startTime: Date.now() },
@@ -173,6 +184,14 @@ export default function DashboardPage() {
         setAgentStates(prev => {
           const a = prev[msg.agentName];
           if (!a) return prev;
+          // Compute elapsed from the ISO timestamps carried in the WS messages
+          // (preferred over Date.now() diff which can include React render lag).
+          let elapsed = a.startTime ? Date.now() - a.startTime : null;
+          const startTs = agentStartTsRef.current[msg.agentName];
+          if (startTs && msg.timestamp) {
+            const diff = new Date(msg.timestamp).getTime() - new Date(startTs).getTime();
+            if (!isNaN(diff) && diff >= 0) elapsed = diff;
+          }
           const extra = msg.agentName === 'ThreatIntelAgent'
             ? { usedRealApi: msg.usedRealApi, isMalicious: msg.confidence > 0 }
             : {};
@@ -181,7 +200,7 @@ export default function DashboardPage() {
             [msg.agentName]: {
               ...a, status: 'COMPLETE',
               summary: msg.summary || msg.message,
-              elapsed: a.startTime ? Date.now() - a.startTime : null,
+              elapsed,
               ...extra,
             },
           };
@@ -289,6 +308,9 @@ export default function DashboardPage() {
 
   return (
     <div className="app-shell">
+      {/* Boot overlay — shown once on dashboard load */}
+      {showBoot && <BootOverlay onComplete={() => setShowBoot(false)} />}
+
       <Sidebar
         activePage={activePage}
         incidentActive={incidentActive}
@@ -298,7 +320,13 @@ export default function DashboardPage() {
       />
 
       <div className="main-content">
-        {/* 3px threat bar */}
+        {/* Persistent top status bar */}
+        <StatusBar
+          connected={connected}
+          incidentActive={incidentActive}
+          currentIncidentId={currentId}
+          threatLevel={contained ? 'CONTAINED' : threatLevel}
+        />
         <div className={`threat-bar ${incidentActive ? 'active' : ''} ${contained ? 'contained' : ''}`} />
 
         {/* Status strip during incident */}
@@ -342,7 +370,9 @@ export default function DashboardPage() {
                   animation: 'sweep-in 0.25s ease'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>{alert.type === 'error' ? '🚨' : alert.type === 'warning' ? '⚠' : 'ℹ'}</span>
+                    {alert.type !== 'error' && (
+                      <span>{alert.type === 'warning' ? '⚠' : 'ℹ'}</span>
+                    )}
                     <strong style={{ textTransform: 'uppercase' }}>[{alert.type}]</strong>
                     <span>{alert.message}</span>
                   </div>
@@ -377,6 +407,13 @@ export default function DashboardPage() {
               />
               <GraphInsights graphNodes={graphNodes} graphEdges={graphEdges} />
             </div>
+          ) : activePage === 'responses' ? (
+            <ResponseCenter
+              responses={responses}
+              incidentActive={incidentActive}
+              contained={contained}
+              metrics={metrics}
+            />
           ) : (
             <>
               {platformMetrics && <SystemMetrics metrics={platformMetrics} />}
@@ -385,7 +422,7 @@ export default function DashboardPage() {
                 <div style={{
                   padding: '10px 16px',
                   background: 'var(--accent-dim)',
-                  border: '1px solid rgba(99,102,241,0.15)',
+                  border: '1px solid rgba(59,130,246,0.15)',
                   borderRadius: 8,
                   marginBottom: 12,
                   display: 'flex',
@@ -403,6 +440,9 @@ export default function DashboardPage() {
                   </span>
                 </div>
               )}
+
+              {/* Attack Scenario Selector */}
+              <ScenarioSelector incidentActive={incidentActive} />
 
               <div className="stats-row">
                 <StatCard

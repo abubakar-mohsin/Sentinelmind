@@ -39,7 +39,7 @@ public class CriticalSeverityHandler extends AbstractEventHandler {
         alert.put("severity", "CRITICAL");
         alert.put("sourceIp", finding.getSourceIp());
         alert.put("actor", finding.getActor());
-        alert.put("message", "CRITICAL incident confirmed — automated response initiating");
+        alert.put("message", "Critical security incident confirmed. Initiating automated response playbook.");
         alert.put("timestamp", Instant.now().toString());
         webSocketGateway.sendRawAlert(alert);
 

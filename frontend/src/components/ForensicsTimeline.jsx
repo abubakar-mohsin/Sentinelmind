@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+
 export default function ForensicsTimeline({ incidentId }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -12,10 +14,7 @@ export default function ForensicsTimeline({ incidentId }) {
     setLoading(true);
     setError(null);
 
-    const headers = new Headers();
-    headers.set('Authorization', 'Basic ' + btoa('admin:sentinelmind'));
-
-    fetch(`/api/forensics/${incidentId}`, { headers })
+    fetch(`${API_BASE}/api/forensics/${incidentId}`)
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch forensics data');
         return res.json();
@@ -110,15 +109,16 @@ export default function ForensicsTimeline({ incidentId }) {
               const dateObj = new Date(evt.timestamp);
               const formattedTime = isNaN(dateObj.getTime()) ? evt.timestamp : dateObj.toLocaleTimeString();
               return (
-                <TimelineNode
-                  key={idx}
-                  title={evt.eventType.replace(/_/g, ' ')}
-                  time={formattedTime}
-                  body={evt.description}
-                  icon={getIconForType(evt.eventType)}
-                  color={getColorForSeverity(evt.severity)}
-                  isLast={idx === data.events.length - 1}
-                />
+                <div key={idx} className="alert-entry">
+                  <TimelineNode
+                    title={evt.eventType.replace(/_/g, ' ')}
+                    time={formattedTime}
+                    body={evt.description}
+                    icon={getIconForType(evt.eventType)}
+                    color={getColorForSeverity(evt.severity)}
+                    isLast={idx === data.events.length - 1}
+                  />
+                </div>
               );
             })}
           </div>
